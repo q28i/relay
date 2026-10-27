@@ -1,93 +1,75 @@
-# Python Automated Bulk WhatsApp Messages
+# WhatsApp Bulk Messenger Pro
 
-It is a python script that sends WhatsApp message automatically from WhatsApp web application with saved contact numbers. It can be configured to send advertising messages to customers. It read data from an excel sheet and send a configured message to people.
+[![Release](https://img.shields.io/github/v/release/ainttyug/whatsapp-bulk-messenger?color=green)](https://github.com/ainttyug/whatsapp-bulk-messenger/releases)
+[![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
+[![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey.svg)](https://www.microsoft.com/windows)
+[![License](https://img.shields.io/badge/License-Proprietary-red.svg)]()
 
-## Contact me over Telegram: https://t.me/inforkgodara
+A modern, high-performance desktop application for sending bulk personalized WhatsApp messages, images, videos, and PDF brochures directly from your browser sessions. Includes an in-app spreadsheet editor, hardware device licensing, anti-ban cooldown engine, and automated remote updates.
 
-## Note
-This is for saved contact numbers only if you want to send whatsapp bulk messages to unsaved or without saving the contact numbers. You may prefer another repository.
-* Repository: https://github.com/inforkgodara/whatsapp-bulk-messages-without-saving-contacts
+---
 
-## Important
-* WhatsApp Business released API on May 2022, no longer needed this repository. You can accomplish your same requirements through WhatsApp Business APIs.
+## Key Highlights
 
-## Prerequisites
+- **Dual-Mode Desktop Interface**:
+  - **Simplified Mode (Default)**: A clean 3-step dashboard for non-technical users (`Select Contacts` -> `Type Message` -> `Send`).
+  - **🛠️ Developer Mode**: 6 advanced tabs with live data tables, browser profile selection, Spintax variation, anti-ban sliders, daily automation scheduler, and release publishing.
+- **Built-in Excel & Spreadsheet Editor**:
+  - View, type, and edit `.xlsx`, `.xls`, and `.csv` files directly inside the application powered by `tksheet`.
+  - **Quick Paste**: Paste raw lists of phone numbers copied from WhatsApp or text files directly into the grid.
+- **Reddit & Industry Anti-Ban Protection**:
+  - Randomized delay jitter (8–16s) to emulate human typing speed.
+  - Automatic batch cooldown pauses (60–90s after every 20 messages).
+  - Spintax variation engine (`{Hi|Hello|Hey}`) ensuring every dispatched message is textually unique.
+  - Daily sending volume caps.
+- **Hardware Device ID & Developer Whitelist**:
+  - Generates immutable Windows hardware fingerprints (`MachineGuid` + MAC node hash).
+  - Whitelists developer devices with master release publishing privileges.
+- **Remote Auto-Updater**:
+  - Automatic update checks on startup via GitHub Releases or Cloudflare Workers.
+  - 1-click update installation that preserves client logins, spreadsheets, and settings.
+- **1-Click 0-Setup Runner (`run.bat`)**:
+  - Automatically installs Python via `winget` or `curl` if missing.
+  - Automatically installs dependencies (`selenium`, `openpyxl`, `tksheet`).
 
-In order to run the python script, your system must have the following programs/packages installed and the contact number should be saved in your phone (You can use bulk contact number saving procedure of email). There is a way without saving the contact number but has the limitation to send the attachment.
-* Python 3.8: Download it from https://www.python.org/downloads
-* Selenium Web Driver: Either you can use repo driver else you can download it https://chromedriver.chromium.org/downloads
-* Google Chrome : Download it from https://www.google.com/chrome
-* Pandas : Run in command prompt **pip install pandas**
-* Xlrd : Run in command prompt **pip install xlrd**
-* Selenium: Run in command prompt **pip install selenium** 
+---
 
-## Approach
-* User scans web QR code to log in into the WhatsApp web application.
-* The script reads a customized message from excel sheet.
-* The script reads rows one by one and searches that contact number in the web search box if the contact number found on WhatsApp then it will send a configured message otherwise It reads next row. 
-* Loop execute until and unless all rows complete.
+## Quick Start
 
-Note: If you wish to send an image instead of text you can write attachment selection python code.
+### 1-Click Launch (Recommended)
+Double-click **`run.bat`**:
+1. Checks for Python and installs it automatically if missing.
+2. Checks and installs required dependencies.
+3. Launches the Desktop application.
 
-## Legal
-* This code is in no way affiliated with, authorized, maintained, sponsored or endorsed by WhatsApp or any of its affiliates or subsidiaries. This is an independent and unofficial software. Use at your own risk. Commercial use of this code/repo is strictly prohibited.
+### CLI & Headless Dispatch
+```bash
+# Display hardware Device ID & licensing role:
+python run.py --device-info
 
-## Code
+# Check for updates from GitHub or Cloudflare:
+python run.py --check-update
+
+# Run automated batch headlessly:
+python run.py --auto --headless
+
+# Schedule daily dispatch at 09:30 AM:
+python run.py --schedule 09:30
+
+# Package a release for distribution (Whitelisted Developer only):
+python run.py --package-release 1.2.1
 ```
-# Program to send bulk customized message through WhatsApp web application
-# Author @inforkgodara
 
-from selenium import webdriver
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.common.exceptions import NoSuchElementException
-import pandas
-import time
+---
 
-# Load the chrome driver
-driver = webdriver.Chrome()
-count = 0
+## Cloudflare Edge Update Distribution
 
-# Open WhatsApp URL in chrome browser
-driver.get("https://web.whatsapp.com/")
-wait = WebDriverWait(driver, 20)
+For zero-latency global update distribution, see [`cloudflare/README.md`](cloudflare/README.md):
+- Double-click `cloudflare/deploy.bat` to deploy the edge worker to Cloudflare Workers.
+- Or connect this GitHub repository directly inside your Cloudflare Dashboard under **Compute (Workers) -> Workers & Pages**.
 
-# Read data from excel
-excel_data = pandas.read_excel('Customer bulk email data.xlsx', sheet_name='Customers')
-message = excel_data['Message'][0]
+---
 
-# Iterate excel rows till to finish
-for column in excel_data['Name'].tolist():
-    # Locate search box through x_path
-    search_box = '//*[@id="side"]/div[1]/div/label/div/div[2]'
-    person_title = wait.until(lambda driver:driver.find_element_by_xpath(search_box))
+## Technical Documentation
 
-    # Clear search box if any contact number is written in it
-    person_title.clear()
-
-    # Send contact number in search box
-    person_title.send_keys(str(excel_data['Contact'][count]))
-    count = count + 1
-
-    # Wait for 3 seconds to search contact number
-    time.sleep(3)
-
-    try:
-        # Load error message in case unavailability of contact number
-        element = driver.find_element_by_xpath('//*[@id="pane-side"]/div[1]/div/span')
-    except NoSuchElementException:
-        # Format the message from excel sheet
-        message = message.replace('{customer_name}', column)
-        person_title.send_keys(Keys.ENTER)
-        actions = ActionChains(driver)
-        actions.send_keys(message)
-        actions.send_keys(Keys.ENTER)
-        actions.perform()
-
-# Close Chrome browser
-driver.quit()
-```
-Note: The script may not work in case if the HTML of web WhatsApp is changed.
-
-Find it on youtube. https://youtu.be/NcWXpsczl3c
+For complete technical specifications, anti-ban research, architecture diagrams, and selector blueprints, refer to [DOCUMENTATION.md](DOCUMENTATION.md).
