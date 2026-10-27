@@ -1,0 +1,45 @@
+# WhatsApp Browser Sessions & Local Profile Data
+whatsapp_browser_session/
+*.session
+
+# Local Security, Audit Logs & Machine Authorization
+device_audit.log
+auth_config.json
+*.log
+
+# User Configuration & Personal Data
+config.json
+whatsapp_report_*.csv
+Customer bulk email data.xlsx
+
+# Auto-Updater Temporary Files & Backups
+.update_backup/
+_temp_update.zip
+dist/
+releases/
+
+# Python Cache & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.spec
+build/
+
+# IDE & Editor Settings
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS Generated Files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# Large/Redundant Binary Drivers (Selenium 4 manages drivers automatically)
+chromedriver.exe
+geckodriver.exe
+msedgedriver.exe
+

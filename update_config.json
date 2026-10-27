@@ -1,0 +1,7 @@
+{
+    "provider": "github",
+    "github_repo": "ainttyug/whatsapp-bulk-messenger",
+    "branch": "main",
+    "custom_endpoint": "",
+    "auto_check_on_startup": true
+}
