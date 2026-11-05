@@ -422,6 +422,73 @@ h1, h2, h3, h4, .card-title {
   border: 0 !important;
 }
 
+/* ==========================================================================
+   Universal Reusable Checkbox Styles (Void, Dark & Light Themes)
+   ========================================================================== */
+input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  min-height: 16px;
+  margin: 0;
+  vertical-align: middle;
+  background-color: var(--surface-bg);
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: inline-grid;
+  place-content: center;
+  transition: all 0.15s ease;
+  position: relative;
+  flex-shrink: 0;
+}
+
+input[type="checkbox"]:hover:not(:disabled) {
+  border-color: var(--primary);
+  background-color: var(--surface-subtle);
+}
+
+input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+input[type="checkbox"]:checked {
+  background-color: var(--primary);
+  border-color: var(--primary);
+}
+
+input[type="checkbox"]:checked::after {
+  content: "";
+  width: 4.5px;
+  height: 8.5px;
+  border: solid #ffffff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) translate(-0.5px, -1px);
+}
+
+input[type="checkbox"]:indeterminate {
+  background-color: var(--primary);
+  border-color: var(--primary);
+}
+
+input[type="checkbox"]:indeterminate::after {
+  content: "";
+  width: 8px;
+  height: 2px;
+  background-color: #ffffff;
+  border-radius: 1px;
+}
+
+input[type="checkbox"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background-color: var(--surface-subtle);
+  border-color: var(--border-color);
+}
+
 /* Buttons */
 .btn {
   display: inline-flex;
@@ -3022,40 +3089,82 @@ a:focus-visible {
 /* Media Set Card Item (Wireframe Grid) */
 .media-set-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fill, minmax(185px, 1fr));
+  gap: 1rem;
 }
 
 .media-set-card-item {
   position: relative;
-  background-color: var(--bg-surface);
+  background-color: var(--surface-bg);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  padding: 0.5rem;
+  border-radius: var(--radius-md);
+  padding: 0.65rem 0.75rem;
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.45rem;
   transition: all 0.15s ease;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .media-set-card-item:hover {
-  border-color: var(--border-color-hover);
+  border-color: var(--border-hover);
   box-shadow: var(--shadow-sm);
 }
 
 .media-set-card-item.selected {
   border-color: var(--primary);
-  background-color: rgba(20, 184, 166, 0.05);
+  background-color: rgba(15, 118, 110, 0.06);
 }
 
 .media-set-card-item.excluded {
-  opacity: 0.65;
+  border-color: rgba(113, 113, 122, 0.45);
   border-style: dashed;
+  background-color: rgba(113, 113, 122, 0.04);
+}
+
+.media-set-card-item.excluded .media-set-thumb-box {
+  filter: grayscale(40%);
+  opacity: 0.85;
+}
+
+.media-set-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.media-active-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+  border: 1px solid transparent;
+  background: transparent;
+}
+
+.media-active-pill.active {
+  background-color: rgba(15, 118, 110, 0.12);
+  color: var(--primary);
+  border-color: rgba(15, 118, 110, 0.3);
+}
+
+.media-active-pill.excluded {
+  background-color: var(--surface-subtle);
+  color: var(--text-muted);
+  border-color: var(--border-color);
 }
 
 .media-set-thumb-box {
   width: 100%;
-  height: 90px;
+  height: 110px;
   background-color: var(--surface-subtle);
   border-radius: var(--radius-xs);
   overflow: hidden;
@@ -3071,35 +3180,33 @@ a:focus-visible {
   object-fit: cover;
 }
 
-.media-set-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
 .media-set-card-title {
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  margin-top: 0.15rem;
 }
 
 .media-set-card-meta {
-  font-size: 0.6875rem;
+  font-size: 0.7rem;
   color: var(--text-muted);
   display: flex;
   justify-content: space-between;
+  align-items: center;
 }
 
 .media-set-card-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
+  gap: 0.4rem;
   margin-top: auto;
-  padding-top: 0.35rem;
+  padding-top: 0.45rem;
   border-top: 1px solid var(--border-color);
+  flex-wrap: nowrap;
 }
 
 /* Variable Token Chips */
@@ -3254,14 +3361,20 @@ a:focus-visible {
 
 /* Template Editor Sticky Top Bar */
 .template-editor-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
-  padding: 0.85rem 1.25rem;
-  background: var(--bg-surface);
+  padding: 0.75rem 1.25rem;
+  background: var(--surface-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
   margin-bottom: 1.25rem;
   flex-wrap: wrap;
 }

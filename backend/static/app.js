@@ -78,6 +78,26 @@ class WhatsAppDashboardApp {
 
   initKeyboardShortcuts() {
     window.addEventListener('keydown', (e) => {
+      const confirmModal = document.getElementById('modal-confirm-dialog');
+      const isConfirmActive = confirmModal && confirmModal.classList.contains('active');
+
+      if (e.key === 'Escape') {
+        if (isConfirmActive) {
+          e.preventDefault();
+          this.closeConfirmDialog(false);
+          return;
+        }
+      }
+
+      if (e.key === 'Enter' && isConfirmActive) {
+        if (document.activeElement && document.activeElement.id === 'btn-confirm-cancel') {
+          return;
+        }
+        e.preventDefault();
+        this.closeConfirmDialog(true);
+        return;
+      }
+
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         const editorView = document.getElementById('template-editor-view');
         if (this.activeTemplateId && editorView && editorView.style.display !== 'none') {
@@ -380,6 +400,101 @@ class WhatsAppDashboardApp {
     }, 3200);
   }
 
+  showToastWithAction(message, actionLabel, onAction, type = 'info', duration = 5500) {
+    if (!message) return;
+    const shelf = document.getElementById('toast-shelf');
+    if (!shelf) return;
+
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.style.display = 'flex';
+    toast.style.alignItems = 'center';
+    toast.style.justifyContent = 'space-between';
+    toast.style.gap = '0.75rem';
+
+    const span = document.createElement('span');
+    span.textContent = message;
+    toast.appendChild(span);
+
+    if (actionLabel && typeof onAction === 'function') {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-subtle btn-xs';
+      btn.textContent = actionLabel;
+      btn.style.fontWeight = '700';
+      btn.style.textDecoration = 'underline';
+      btn.style.cursor = 'pointer';
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        try { onAction(); } catch (err) { console.error(err); }
+        toast.remove();
+      };
+      toast.appendChild(btn);
+    }
+
+    shelf.appendChild(toast);
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transition = 'opacity 0.2s ease';
+      setTimeout(() => toast.remove(), 250);
+    }, duration);
+  }
+
+  confirmDialog({ title, message, details, confirmText = 'Confirm', cancelText = 'Cancel', isDestructive = false }) {
+    return new Promise(resolve => {
+      this._confirmResolver = resolve;
+      const titleEl = document.getElementById('confirm-dialog-title');
+      const msgEl = document.getElementById('confirm-dialog-message');
+      const detEl = document.getElementById('confirm-dialog-details');
+      const okBtn = document.getElementById('btn-confirm-proceed');
+      const cancelBtn = document.getElementById('btn-confirm-cancel');
+
+      if (titleEl) titleEl.textContent = title || 'Confirm Action';
+      if (msgEl) msgEl.textContent = message || 'Are you sure you want to proceed?';
+      if (detEl) {
+        if (details) {
+          detEl.textContent = details;
+          detEl.style.display = 'block';
+        } else {
+          detEl.style.display = 'none';
+        }
+      }
+      if (okBtn) {
+        okBtn.textContent = confirmText;
+        okBtn.className = isDestructive ? 'btn btn-danger btn-sm' : 'btn btn-primary btn-sm';
+      }
+      if (cancelBtn) cancelBtn.textContent = cancelText;
+
+      this.openModal('modal-confirm-dialog');
+      setTimeout(() => {
+        if (cancelBtn) cancelBtn.focus();
+      }, 50);
+    });
+  }
+
+  closeConfirmDialog(confirmed) {
+    this.closeModal('modal-confirm-dialog');
+    if (this._confirmResolver) {
+      const resolve = this._confirmResolver;
+      this._confirmResolver = null;
+      resolve(Boolean(confirmed));
+    }
+  }
+
+  formatSafeTime(val) {
+    if (!val) return '—';
+    if (typeof val === 'string' && /^\d{2}:\d{2}(:\d{2})?$/.test(val.trim())) {
+      return val.trim();
+    }
+    try {
+      const d = new Date(val);
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      }
+    } catch (e) {}
+    return '—';
+  }
+
   // --- WebSocket Live Updates ---
   initWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -453,7 +568,10 @@ class WhatsAppDashboardApp {
       return await res.json();
     } catch (e) {
       if (!isSilent) {
-        const displayMsg = e.action ? `${e.message} ${e.action}` : (e.message || 'Request failed');
+        let displayMsg = e.action ? `${e.message} ${e.action}` : (e.message || 'Request failed');
+        if (e.name === 'TypeError' && (e.message.includes('fetch') || e.message.includes('NetworkError') || e.message.includes('Failed to fetch'))) {
+          displayMsg = 'Cannot reach Relay server at http://127.0.0.1:8000. Please check if the web server is running.';
+        }
         this.showToast(displayMsg, 'error');
       }
       throw e;
@@ -472,7 +590,7 @@ class WhatsAppDashboardApp {
   async loadDashboardData() {
     try {
       // 1. Fetch KPIs
-      const kpis = await this.api('/api/logs/kpis');
+      const kpis = await this.api('/api/logs/kpis', { silent: true });
       const totalContacts = kpis.total_contacts || 0;
       const totalTemplates = kpis.total_templates || 0;
       const totalJobs = kpis.total_jobs || 0;
@@ -557,7 +675,7 @@ class WhatsAppDashboardApp {
       }
 
       // 6. Recent Campaigns List (Compact within page flow)
-      const jobs = await this.api('/api/jobs?limit=4');
+      const jobs = await this.api('/api/jobs?limit=4', { silent: true });
       const recentBody = document.getElementById('dash-recent-body');
       if (recentBody) {
         if (!jobs || jobs.length === 0) {
@@ -593,7 +711,7 @@ class WhatsAppDashboardApp {
 
   async refreshActiveJob() {
     try {
-      const activeRes = await this.api('/api/jobs/active');
+      const activeRes = await this.api('/api/jobs/active', { silent: true });
       this.updateActiveJobBanner(activeRes && activeRes.active_job ? activeRes.active_job : null);
     } catch (e) {}
   }
@@ -840,7 +958,15 @@ class WhatsAppDashboardApp {
 
   async cancelActiveJob() {
     if (!this.activeJob) return;
-    if (!confirm('Are you sure you want to stop this campaign?')) return;
+    const ok = await this.confirmDialog({
+      title: 'Stop Campaign',
+      message: 'Are you sure you want to stop this campaign?',
+      details: 'Outgoing dispatches will cease immediately. Completed messages will remain logged.',
+      confirmText: 'Stop Campaign',
+      cancelText: 'Continue Sending',
+      isDestructive: true
+    });
+    if (!ok) return;
     try {
       await this.api(`/api/jobs/${this.activeJob.id}/action`, {
         method: 'POST',
@@ -1311,7 +1437,15 @@ class WhatsAppDashboardApp {
 
   async executeBulkSuppress() {
     if (this.selectedContactIds.size === 0) return;
-    if (!confirm(`Suppress / opt out ${this.selectedContactIds.size} selected contact(s)? They will be excluded from campaigns.`)) return;
+    const ok = await this.confirmDialog({
+      title: 'Suppress Contacts',
+      message: `Suppress / opt out ${this.selectedContactIds.size} selected contact(s)?`,
+      details: 'These contacts will be excluded from all upcoming automated broadcasts.',
+      confirmText: 'Suppress Contacts',
+      cancelText: 'Cancel',
+      isDestructive: true
+    });
+    if (!ok) return;
 
     try {
       const res = await this.api('/api/contacts/bulk-edit', {
@@ -1333,7 +1467,15 @@ class WhatsAppDashboardApp {
   async executeBulkDelete() {
     const count = this.selectedContactIds.size;
     if (count === 0) return;
-    if (!confirm(`Are you sure you want to permanently delete ${count} selected contact${count === 1 ? '' : 's'}?`)) return;
+    const ok = await this.confirmDialog({
+      title: 'Delete Contacts',
+      message: `Are you sure you want to permanently delete ${count} selected contact${count === 1 ? '' : 's'}?`,
+      details: 'This will remove the contacts from your database completely.',
+      confirmText: `Delete ${count} Contact${count === 1 ? '' : 's'}`,
+      cancelText: 'Cancel',
+      isDestructive: true
+    });
+    if (!ok) return;
 
     try {
       const res = await this.api('/api/contacts/bulk-delete', {
@@ -1930,7 +2072,15 @@ class WhatsAppDashboardApp {
   }
 
   async deleteContact(id) {
-    if (!confirm('Delete this contact?')) return;
+    const ok = await this.confirmDialog({
+      title: 'Delete Contact',
+      message: 'Are you sure you want to delete this contact?',
+      details: 'This contact will be permanently removed from your address book.',
+      confirmText: 'Delete Contact',
+      cancelText: 'Cancel',
+      isDestructive: true
+    });
+    if (!ok) return;
     try {
       await this.api(`/api/contacts/${id}`, { method: 'DELETE' });
       this.showToast('Contact deleted', 'success');
@@ -2784,7 +2934,15 @@ class WhatsAppDashboardApp {
     const selectedSet = (setType === 'text') ? this.selectedTextSetItemIds : this.selectedMediaSetItemIds;
     if (!setId || selectedSet.size === 0) return;
 
-    if (!confirm(`Remove ${selectedSet.size} selected item(s) from this set?`)) return;
+    const ok = await this.confirmDialog({
+      title: 'Remove Items from Set',
+      message: `Remove ${selectedSet.size} selected item(s) from this set?`,
+      details: 'The items will remain available in your library and templates.',
+      confirmText: 'Remove Items',
+      cancelText: 'Cancel',
+      isDestructive: false
+    });
+    if (!ok) return;
 
     try {
       const itemIds = Array.from(selectedSet);
@@ -2952,7 +3110,15 @@ class WhatsAppDashboardApp {
     const activeSet = (setType === 'text') ? this.activeTextSet : this.activeMediaSet;
     if (!setId) return;
 
-    if (!confirm(`Delete set "${activeSet?.name || 'this set'}" and its item assignments? Assets and templates in your library will NOT be deleted.`)) return;
+    const ok = await this.confirmDialog({
+      title: 'Delete Content Set',
+      message: `Delete set "${activeSet?.name || 'this set'}"?`,
+      details: 'Assets and templates in your library will NOT be deleted.',
+      confirmText: 'Delete Set',
+      cancelText: 'Cancel',
+      isDestructive: true
+    });
+    if (!ok) return;
 
     try {
       await this.api(`/api/sets/${setId}`, { method: 'DELETE' });
@@ -3505,7 +3671,15 @@ class WhatsAppDashboardApp {
   }
 
   async deleteLibraryAsset(assetId) {
-    if (!confirm('Are you sure you want to delete this media asset?')) return;
+    const ok = await this.confirmDialog({
+      title: 'Delete Media Asset',
+      message: 'Are you sure you want to delete this media asset?',
+      details: 'This will remove the file from your library.',
+      confirmText: 'Delete Asset',
+      cancelText: 'Cancel',
+      isDestructive: true
+    });
+    if (!ok) return;
     try {
       await this.api(`/api/media/${assetId}`, { method: 'DELETE' });
       this.showToast('Media asset removed', 'success');
@@ -3682,7 +3856,15 @@ class WhatsAppDashboardApp {
   }
 
   async deleteCollection(colId) {
-    if (!confirm('Are you sure you want to delete this content collection?')) return;
+    const ok = await this.confirmDialog({
+      title: 'Delete Collection',
+      message: 'Are you sure you want to delete this content collection?',
+      details: 'Items within the collection will not be deleted from your library.',
+      confirmText: 'Delete Collection',
+      cancelText: 'Cancel',
+      isDestructive: true
+    });
+    if (!ok) return;
     try {
       await this.api(`/api/collections/${colId}`, { method: 'DELETE' });
       this.showToast('Collection deleted', 'success');
@@ -4350,13 +4532,17 @@ class WhatsAppDashboardApp {
   }
 
   async deleteMediaAsset(assetId, usageCount) {
-    if (usageCount > 0) {
-      if (!confirm(`Warning: This asset is referenced by ${usageCount} item(s). Deleting it will cause media dispatches to fail permanently. Do you wish to force delete?`)) {
-        return;
-      }
-    } else {
-      if (!confirm('Are you sure you want to delete this media asset?')) return;
-    }
+    const ok = await this.confirmDialog({
+      title: 'Delete Media Asset',
+      message: usageCount > 0
+        ? `Warning: This asset is referenced by ${usageCount} item(s). Deleting it will cause future media dispatches to fail permanently. Do you wish to force delete?`
+        : 'Are you sure you want to delete this media asset?',
+      details: 'The file will be permanently removed from your storage and library.',
+      confirmText: 'Delete Asset',
+      cancelText: 'Cancel',
+      isDestructive: true
+    });
+    if (!ok) return;
 
     try {
       const url = usageCount > 0 ? `/api/media/${assetId}?force=true` : `/api/media/${assetId}`;
@@ -4373,7 +4559,15 @@ class WhatsAppDashboardApp {
   }
 
   async deleteMessageDraft(id) {
-    if (!confirm('Delete this message draft?')) return;
+    const ok = await this.confirmDialog({
+      title: 'Delete Message Draft',
+      message: 'Are you sure you want to delete this message draft?',
+      details: 'This draft will be removed from your message library.',
+      confirmText: 'Delete Draft',
+      cancelText: 'Cancel',
+      isDestructive: true
+    });
+    if (!ok) return;
     try {
       await this.api(`/api/templates/${id}`, { method: 'DELETE' });
       this.showToast('Message deleted', 'success');
@@ -4464,7 +4658,15 @@ class WhatsAppDashboardApp {
   }
 
   async deleteVersion(vid) {
-    if (!confirm('Delete this message version?')) return;
+    const ok = await this.confirmDialog({
+      title: 'Delete Message Version',
+      message: 'Delete this message version?',
+      details: 'This variation will be removed from the draft template.',
+      confirmText: 'Delete Version',
+      cancelText: 'Cancel',
+      isDestructive: true
+    });
+    if (!ok) return;
     try {
       await this.api(`/api/templates/variants/${vid}`, { method: 'DELETE' });
       this.showToast('Version deleted', 'success');
@@ -5210,6 +5412,9 @@ class WhatsAppDashboardApp {
         status: isConnected ? 'Signed in' : (isWaitingQr ? 'Needs QR sign-in' : (isLocked ? 'Profile in use' : (isStaleLock ? 'Stale lock detected' : (state === 'unsupported_profile' ? 'Cannot be automated' : (isLaunchFailed ? 'Launch failed' : (state === 'browser_closed' ? 'Browser unavailable' : stateLabel))))))
       };
       this.connectionState = conn;
+      this.isWhatsAppConnected = Boolean(isConnected);
+      this.currentSessionState = state;
+      this.updateTemplateEditorConnectionPill();
 
       const prefProfile = data.preferred_profile || {};
       const isUnsupported = state === 'unsupported_profile' || (prefProfile.is_supported === false && !isConnected);
@@ -5383,6 +5588,9 @@ class WhatsAppDashboardApp {
         } else if (isWaitingQr) {
           dot.className = 'status-indicator warning';
           text.textContent = 'Needs QR Scan';
+        } else if (isUnsupported) {
+          dot.className = 'status-indicator offline';
+          text.textContent = 'Cannot be automated';
         } else if (isLocked) {
           dot.className = 'status-indicator offline';
           text.textContent = 'Profile in Use';
@@ -5444,11 +5652,7 @@ class WhatsAppDashboardApp {
 
         const timeEl = document.getElementById(`${prefix}-time-${step.id}`);
         if (timeEl) {
-          if (step.timestamp) {
-            timeEl.textContent = new Date(step.timestamp).toLocaleTimeString();
-          } else {
-            timeEl.textContent = '—';
-          }
+          timeEl.textContent = this.formatSafeTime(step.timestamp);
         }
       }
     });
@@ -5625,7 +5829,13 @@ class WhatsAppDashboardApp {
     if (this.isSelectingModel) return;
 
     if (this.activeJob && (this.activeJob.status === 'RUNNING' || this.activeJob.status === 'WAITING_FOR_CONNECTION')) {
-      const confirmChange = confirm('A campaign is currently active or queued. Changing the connection model may interrupt sending. Do you wish to continue?');
+      const confirmChange = await this.confirmDialog({
+        title: 'Change Connection Model',
+        message: 'A campaign is currently active or queued. Changing the connection model may interrupt sending. Do you wish to continue?',
+        confirmText: 'Change Model',
+        cancelText: 'Keep Current',
+        isDestructive: false
+      });
       if (!confirmChange) {
         const isDed = this.selectedConnectionModel ? (this.selectedConnectionModel === 'dedicated') : Boolean(this.connectionState?.is_dedicated || this.connectionState?.mode === 'dedicated');
         const radDed = document.getElementById('radio-model-dedicated');
@@ -6534,9 +6744,15 @@ class WhatsAppDashboardApp {
 
   // --- Delete Template ---
   async deleteTemplate(templateId, name) {
-    if (!confirm(`Are you sure you want to delete template '${name}'?\n\nHistorical campaign reports will be safely preserved.`)) {
-      return;
-    }
+    const ok = await this.confirmDialog({
+      title: 'Delete Template',
+      message: `Are you sure you want to delete template '${name}'?`,
+      details: 'Historical campaign reports and sent message logs will be safely preserved.',
+      confirmText: 'Delete Template',
+      cancelText: 'Cancel',
+      isDestructive: true
+    });
+    if (!ok) return;
 
     try {
       await this.api(`/api/templates/${templateId}`, { method: 'DELETE' });
@@ -6608,21 +6824,56 @@ class WhatsAppDashboardApp {
     const text = document.getElementById('tpl-editor-conn-text');
     if (!pill || !dot || !text) return;
 
-    const isConnected = this.currentSessionState === 'connected' || this.isWhatsAppConnected;
+    const conn = this.connectionState || {};
+    const state = conn.state || this.currentSessionState || 'not_checked';
+    const isConnected = state === 'connected' || this.isWhatsAppConnected;
+
     if (isConnected) {
       dot.className = 'status-indicator online';
-      text.textContent = 'Connection: Ready';
+      text.textContent = 'WhatsApp: Connected';
       pill.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+      pill.title = 'WhatsApp Web is authenticated and ready. Click to view Settings.';
+    } else if (state === 'waiting_for_qr') {
+      dot.className = 'status-indicator warning';
+      text.textContent = 'WhatsApp: Scan QR';
+      pill.style.borderColor = 'rgba(245, 158, 11, 0.4)';
+      pill.title = 'WhatsApp requires device pairing QR scan. Click to view Settings.';
+    } else if (state === 'unsupported_profile' || (conn.preferred_profile && conn.preferred_profile.is_supported === false && !isConnected)) {
+      dot.className = 'status-indicator offline';
+      text.textContent = 'Cannot be automated';
+      pill.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+      pill.title = 'Selected profile cannot be automated under Chrome 136+ security rules. Use persistent Relay session.';
+    } else if (state === 'profile_locked' || state === 'browser_running') {
+      dot.className = 'status-indicator warning';
+      text.textContent = 'Browser: Open elsewhere';
+      pill.style.borderColor = 'rgba(245, 158, 11, 0.4)';
+      pill.title = 'Selected profile is running in another window. Click to view Settings.';
+    } else if (state === 'not_checked' || !this.connectionState) {
+      dot.className = 'status-indicator neutral';
+      text.textContent = 'Checking connection...';
+      pill.style.borderColor = 'var(--border-color)';
+      pill.title = 'Verifying WhatsApp Web connection status...';
     } else {
       dot.className = 'status-indicator offline';
-      text.textContent = 'Connection: Action required';
+      text.textContent = 'WhatsApp: Not connected';
       pill.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+      pill.title = 'WhatsApp session is not active. Click to configure in Settings.';
     }
   }
 
   markTemplateDirty() {
     this.isTemplateDirty = true;
     this.setTemplateSaveStatus('dirty');
+
+    // Debounced automatic save (1500ms after user pauses editing)
+    if (this._templateAutoSaveTimer) {
+      clearTimeout(this._templateAutoSaveTimer);
+    }
+    this._templateAutoSaveTimer = setTimeout(() => {
+      if (this.isTemplateDirty && this.activeTemplateId) {
+        this.saveActiveTemplate(true);
+      }
+    }, 1500);
   }
 
   setTemplateSaveStatus(status) {
@@ -6654,8 +6905,15 @@ class WhatsAppDashboardApp {
     }
   }
 
-  async saveActiveTemplate() {
+  async saveActiveTemplate(isAutoSave = false) {
     if (!this.activeTemplateId) return false;
+    if (this._templateAutoSaveTimer) {
+      clearTimeout(this._templateAutoSaveTimer);
+      this._templateAutoSaveTimer = null;
+    }
+
+    this.templateSaveGeneration = (this.templateSaveGeneration || 0) + 1;
+    const currentGen = this.templateSaveGeneration;
     this.setTemplateSaveStatus('saving');
 
     try {
@@ -6714,17 +6972,27 @@ class WhatsAppDashboardApp {
         body: JSON.stringify(payload)
       });
 
+      if (currentGen !== this.templateSaveGeneration) {
+        // Discard stale response if newer edits occurred while saving
+        return true;
+      }
+
       if (res && res.template) {
         this.activeTemplate = res.template;
       }
       this.isTemplateDirty = false;
       this.setTemplateSaveStatus('saved');
-      this.showToast('Template saved', 'success');
+      if (!isAutoSave) {
+        this.showToast('Template saved', 'success');
+      }
       return true;
     } catch (e) {
-      console.error('Failed to save template:', e);
-      this.setTemplateSaveStatus('error');
-      this.showToast('Failed to save template: ' + (e.message || e), 'error');
+      if (currentGen === this.templateSaveGeneration) {
+        console.error('Failed to save template:', e);
+        this.setTemplateSaveStatus('error');
+        const detailMsg = e.detail || e.message || 'Server returned an error';
+        this.showToast(`Failed to save template: ${detailMsg}`, 'error');
+      }
       return false;
     }
   }
@@ -6948,11 +7216,10 @@ class WhatsAppDashboardApp {
       return `
         <div class="media-set-card-item ${isExcluded ? 'excluded' : ''} ${isSelected ? 'selected' : ''}" id="tpl-media-card-${m.id}">
           <div class="media-set-card-header">
-            <input type="checkbox" style="cursor: pointer; accent-color: var(--primary);" onchange="app.toggleSelectTemplateMedia(${m.id}, this.checked)">
-            <label style="display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.72rem; cursor: pointer; user-select: none;">
-              <input type="checkbox" ${!isExcluded ? 'checked' : ''} style="cursor: pointer; accent-color: var(--primary);" onchange="app.toggleTemplateMediaActive(${m.id}, this.checked)">
-              <span>${!isExcluded ? 'Active' : 'Excluded'}</span>
-            </label>
+            <input type="checkbox" title="Select for bulk actions" style="cursor: pointer; accent-color: var(--primary);" ${isSelected ? 'checked' : ''} onchange="app.toggleSelectTemplateMedia(${m.id}, this.checked)">
+            <button type="button" class="media-active-pill ${!isExcluded ? 'active' : 'excluded'}" onclick="app.toggleTemplateMediaActive(${m.id}, ${isExcluded ? 'true' : 'false'})" title="${!isExcluded ? 'Click to exclude from rotation' : 'Click to include in rotation'}">
+              <span>${!isExcluded ? '● Active' : '○ Excluded'}</span>
+            </button>
           </div>
 
           <div class="media-set-thumb-box">
@@ -6965,13 +7232,12 @@ class WhatsAppDashboardApp {
 
           <div class="media-set-card-meta">
             <span>${this.formatBytes(m.file_size)}</span>
-            <span>${(m.mime_type || '').split('/')[1] || 'FILE'}</span>
+            <span>${(m.mime_type || '').split('/')[1]?.toUpperCase() || 'FILE'}</span>
           </div>
 
           <div class="media-set-card-actions">
             <button type="button" class="btn btn-subtle btn-xs" onclick="app.openMediaPreviewModal(${m.id})">Preview</button>
             <button type="button" class="btn btn-subtle btn-xs" onclick="app.removeMediaFromTemplate(${m.id})" title="Remove from this template">Remove</button>
-            <button type="button" class="btn btn-subtle btn-xs text-danger" onclick="app.deleteMediaPermanently(${m.id}, '${this.escapeHtml(m.filename)}')" title="Delete from disk and library">Delete</button>
           </div>
         </div>
       `;
@@ -7095,8 +7361,9 @@ class WhatsAppDashboardApp {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ is_active: isActive ? 1 : 0 })
       });
-      const card = document.getElementById(`tpl-media-card-${assetId}`);
-      if (card) card.classList.toggle('excluded', !isActive);
+      const updated = await this.api(`/api/templates/${this.activeTemplateId}`);
+      this.activeTemplate = updated;
+      this.renderTemplateMedia(updated);
       this.showToast(isActive ? 'Media included in rotation' : 'Media temporarily excluded', 'info');
     } catch (e) {
       console.error('Failed to toggle media active state:', e);
@@ -7106,9 +7373,24 @@ class WhatsAppDashboardApp {
   async removeMediaFromTemplate(assetId) {
     if (!this.activeTemplateId) return;
     try {
-      await this.api(`/api/templates/${this.activeTemplateId}/media/${assetId}`, { method: 'DELETE' });
-      this.showToast('Removed from template', 'info');
-      const updated = await this.api(`/api/templates/${this.activeTemplateId}`);
+      const currentTplId = this.activeTemplateId;
+      await this.api(`/api/templates/${currentTplId}/media/${assetId}`, { method: 'DELETE' });
+      this.showToastWithAction('Removed from template', 'Undo', async () => {
+        try {
+          await this.api(`/api/templates/${currentTplId}/media`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ asset_ids: [assetId], media_asset_ids: [assetId] })
+          });
+          const reloaded = await this.api(`/api/templates/${currentTplId}`);
+          this.activeTemplate = reloaded;
+          this.renderTemplateMedia(reloaded);
+          this.showToast('Restored media to template', 'success');
+        } catch (err) {
+          console.error('Failed to undo media removal:', err);
+        }
+      }, 'info');
+      const updated = await this.api(`/api/templates/${currentTplId}`);
       this.activeTemplate = updated;
       this.renderTemplateMedia(updated);
     } catch (e) {
@@ -7117,9 +7399,15 @@ class WhatsAppDashboardApp {
   }
 
   async deleteMediaPermanently(assetId, filename) {
-    if (!confirm(`Are you sure you want to permanently delete "${filename}"?\n\nThis will remove the file from your disk and delete it from all templates and library.`)) {
-      return;
-    }
+    const ok = await this.confirmDialog({
+      title: 'Delete Media Permanently',
+      message: `Are you sure you want to permanently delete "${filename}"?`,
+      details: 'This will remove the file from your disk and delete it from all templates and library.',
+      confirmText: 'Delete Permanently',
+      cancelText: 'Cancel',
+      isDestructive: true
+    });
+    if (!ok) return;
 
     try {
       await this.api(`/api/media/${assetId}?force=true`, { method: 'DELETE' });
@@ -7185,9 +7473,16 @@ class WhatsAppDashboardApp {
 
   async bulkDeleteTemplateMediaPermanently() {
     if (this.templateSelectedMediaIds.size === 0) return;
-    if (!confirm(`Are you sure you want to permanently delete ${this.templateSelectedMediaIds.size} media file(s) from disk and database?`)) {
-      return;
-    }
+    const ok = await this.confirmDialog({
+      title: 'Delete Media Files Permanently',
+      message: `Are you sure you want to permanently delete ${this.templateSelectedMediaIds.size} media file(s)?`,
+      details: 'This will remove the files from your disk and database permanently. This action cannot be undone.',
+      confirmText: `Delete ${this.templateSelectedMediaIds.size} Files`,
+      cancelText: 'Cancel',
+      isDestructive: true
+    });
+    if (!ok) return;
+
     const ids = Array.from(this.templateSelectedMediaIds);
     await this.api('/api/media/bulk-delete', {
       method: 'POST',
@@ -7551,7 +7846,11 @@ class WhatsAppDashboardApp {
     this.activeTemplateId = tid;
 
     if (this.isTemplateDirty) {
-      await this.saveActiveTemplate();
+      const saved = await this.saveActiveTemplate();
+      if (!saved) {
+        this.showToast('Could not open Review & Send: template changes could not be saved', 'error');
+        return;
+      }
     }
 
     try {
@@ -7904,9 +8203,15 @@ class WhatsAppDashboardApp {
 
   async executeBulkDeleteMediaLibrary() {
     if (this.selectedMediaLibraryIds.size === 0) return;
-    if (!confirm(`Are you sure you want to permanently delete ${this.selectedMediaLibraryIds.size} file(s) from disk and database?`)) {
-      return;
-    }
+    const ok = await this.confirmDialog({
+      title: 'Bulk Delete Media Files',
+      message: `Are you sure you want to permanently delete ${this.selectedMediaLibraryIds.size} file(s) from disk and database?`,
+      details: 'This will remove the selected files from storage and all templates.',
+      confirmText: `Delete ${this.selectedMediaLibraryIds.size} Files`,
+      cancelText: 'Cancel',
+      isDestructive: true
+    });
+    if (!ok) return;
 
     const ids = Array.from(this.selectedMediaLibraryIds);
     try {
@@ -8060,7 +8365,15 @@ class WhatsAppDashboardApp {
   }
 
   async deleteCampaignRecord(campaignId, name) {
-    if (!confirm(`Are you sure you want to delete campaign '${name}'?`)) return;
+    const ok = await this.confirmDialog({
+      title: 'Delete Campaign Record',
+      message: `Are you sure you want to delete campaign '${name}'?`,
+      details: 'This will remove the campaign summary from your history.',
+      confirmText: 'Delete Campaign',
+      cancelText: 'Cancel',
+      isDestructive: true
+    });
+    if (!ok) return;
     try {
       await this.api(`/api/campaigns/${campaignId}`, { method: 'DELETE' });
       this.showToast(`Deleted campaign '${name}'`, 'info');

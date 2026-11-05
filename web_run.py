@@ -35,9 +35,11 @@ def main():
     parser.add_argument("--host", default="127.0.0.1", help="Host address to bind (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8000, help="Port to listen on (default: 8000)")
     parser.add_argument("--no-browser", action="store_true", help="Do not open browser automatically on launch")
-    parser.add_argument("--reload", action="store_true", help="Enable uvicorn auto-reload for development")
+    parser.add_argument("--reload", action="store_true", default=False, help="Enable uvicorn auto-reload (development only)")
+    parser.add_argument("--no-reload", action="store_true", help="Explicitly disable uvicorn auto-reload")
 
     args = parser.parse_args()
+    reload_enabled = bool(args.reload and not args.no_reload)
 
     url = f"http://{args.host}:{args.port}"
     print("=" * 65)
@@ -46,20 +48,26 @@ def main():
     print(f"  * Server URL      : {url}")
     print(f"  * Interactive Docs: {url}/api/docs")
     print(f"  * Binding Host    : {args.host} (Local Isolated)")
+    print(f"  * Auto-reload     : {'Enabled' if reload_enabled else 'Disabled'}")
     print(f"  * Press Ctrl+C to stop the web server")
     print("=" * 65)
 
     if not args.no_browser:
         threading.Thread(target=open_browser_delayed, args=(url,), daemon=True).start()
 
+    uvicorn_kwargs = {
+        "host": args.host,
+        "port": args.port,
+        "log_level": "info",
+        "reload": reload_enabled
+    }
+    if reload_enabled:
+        uvicorn_kwargs["reload_dirs"] = ["backend"]
+        uvicorn_kwargs["reload_includes"] = ["*.py", "*.html", "*.css", "*.js"]
+        uvicorn_kwargs["reload_excludes"] = ["*.sqlite", "*.sqlite3", "*.db", "*.json", "*.log", "uploads/*", "whatsapp_browser_session/*"]
+
     try:
-        uvicorn.run(
-            "backend.app:app",
-            host=args.host,
-            port=args.port,
-            reload=args.reload,
-            log_level="info"
-        )
+        uvicorn.run("backend.app:app", **uvicorn_kwargs)
     except KeyboardInterrupt:
         print("\n[INFO] Web dashboard server stopped by operator.")
     except Exception as e:

@@ -2630,6 +2630,24 @@
     </div>
   </div>
 
+  <!-- Modal: In-App Confirmation Dialog -->
+  <div class="modal-backdrop" id="modal-confirm-dialog" style="z-index: 1050;">
+    <div class="modal-card" style="max-width: 460px;">
+      <div class="modal-header">
+        <h3 class="modal-title" id="confirm-dialog-title">Confirm Action</h3>
+        <button class="modal-close" onclick="app.closeConfirmDialog(false)">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 1.25rem;">
+        <p id="confirm-dialog-message" style="font-size: 0.875rem; color: var(--text-primary); margin-bottom: 0.5rem;"></p>
+        <div id="confirm-dialog-details" style="font-size: 0.78rem; color: var(--text-muted); background: var(--surface-subtle); border: 1px solid var(--border-color); border-radius: var(--radius-xs); padding: 0.5rem 0.75rem; line-height: 1.45; display: none;"></div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-confirm-cancel" onclick="app.closeConfirmDialog(false)">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm" id="btn-confirm-proceed" onclick="app.closeConfirmDialog(true)">Confirm</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Shelf -->
   <div class="toast-shelf" id="toast-shelf"></div>
 

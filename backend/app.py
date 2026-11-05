@@ -39,18 +39,99 @@ async def lifespan(app: FastAPI):
     logger.info("WhatsApp Automation Web Backend starting up...")
     db.log_event("INFO", "System", "Web dashboard server initialized on http://127.0.0.1:8000")
 
-    # Auto-connect if configured in persistent browser profile preferences
+    # Intelligent startup sequence: restore working Relay session and reuse healthy browser processes
     try:
+        from browser_manager import BrowserManager
+        from backend.connection_monitor import connection_monitor
+        from backend.session_lifecycle import session_lifecycle
+        from config_manager import ConfigManager
+
         pref = db.get_browser_profile_preference()
-        if pref and pref.get("auto_connect"):
-            b_key = pref.get("browser_id", "chrome")
-            p_dir = pref.get("canonical_profile_dir", "Profile 10")
-            p_name = pref.get("profile_display_name", "whatsapp auto")
-            logger.info(f"Auto-connect enabled: initializing background connection monitor for {b_key}/{p_name} ({p_dir})...")
-            from backend.connection_monitor import connection_monitor
-            connection_monitor.start_monitoring(browser_key=b_key, profile_dir=p_dir, profile_name=p_name, headless=False)
+        auto_connect = bool(pref.get("auto_connect", 0)) if pref else False
+        mode = pref.get("selected_automation_mode") or pref.get("connection_mode") or "dedicated"
+        last_conn = pref.get("last_connected_session", {})
+
+        target_b = "chrome"
+        target_p = "__dedicated__"
+        target_name = "Relay Automation Session"
+        is_dedicated = True
+
+        if mode == "existing_profile":
+            pers_prof = pref.get("preferred_personal_profile") or {}
+            cand_b = pers_prof.get("browser") or pref.get("browser_id", "chrome")
+            cand_p = pers_prof.get("profile_dir") or pref.get("canonical_profile_dir", "Profile 10")
+            cand_name = pers_prof.get("profile_name") or pref.get("profile_display_name", "whatsapp auto")
+
+            is_supp, _, _ = BrowserManager.is_profile_automation_supported(cand_b, profile_dir=cand_p, is_dedicated=False)
+            if is_supp:
+                target_b = cand_b
+                target_p = cand_p
+                target_name = cand_name
+                is_dedicated = False
+            else:
+                logger.info(f"Personal profile '{cand_name}' cannot be automated under Chromium security rules. Preserving preference, but directing automation to supported Relay session.")
+                target_b = last_conn.get("browser") or "chrome"
+                target_p = last_conn.get("profile_dir") or "__dedicated__"
+                target_name = last_conn.get("profile_name") or "Relay Automation Session"
+                is_dedicated = (target_p == "__dedicated__")
+        else:
+            target_b = last_conn.get("browser") or "chrome"
+            target_p = last_conn.get("profile_dir") or "__dedicated__"
+            target_name = last_conn.get("profile_name") or "Relay Automation Session"
+            is_dedicated = (target_p == "__dedicated__")
+
+        # Synchronize in-memory config and config.json with target automation session
+        cm = ConfigManager()
+        cfg = cm.get_config()
+        cfg.browser = target_b
+        cfg.profile_dir = target_p
+        cfg.profile_name = target_name
+        cm.save_config(cfg)
+
+        # Check session directory
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if target_p == "__dedicated__":
+            target_path = os.path.join(base_dir, "whatsapp_browser_session")
+        else:
+            b_info = BrowserManager.BROWSERS.get(target_b, {})
+            target_path = os.path.join(b_info.get("user_data_path", ""), target_p)
+        os.makedirs(target_path, exist_ok=True)
+
+        # Detect whether a healthy Relay-owned browser is already running
+        running_diag = BrowserManager.diagnose_profile(target_b, profile_dir=target_p, is_dedicated=is_dedicated)
+        has_running_relay = running_diag.get("availability") == "active_in_relay" or (
+            running_diag.get("conflict_type") == "relay_owned" and bool(running_diag.get("matching_pids"))
+        )
+
+        connection_monitor.update_profile_selection(
+            browser_key=target_b,
+            profile_dir=target_p,
+            profile_name=target_name,
+            is_dedicated=is_dedicated
+        )
+
+        if has_running_relay:
+            logger.info(f"Found running Relay-owned browser process for {target_name}. Attaching and reusing session...")
+            connection_monitor.start_monitoring(
+                browser_key=target_b,
+                profile_dir=target_p,
+                profile_name=target_name,
+                headless=False,
+                force_restart=False
+            )
+        elif auto_connect:
+            logger.info(f"Auto-connect enabled: launching persistent session for {target_name} ({target_p})...")
+            connection_monitor.start_monitoring(
+                browser_key=target_b,
+                profile_dir=target_p,
+                profile_name=target_name,
+                headless=False,
+                force_restart=False
+            )
+        else:
+            logger.info(f"Relay initialized with target session: {target_name} ({target_p}). Ready to start session.")
     except Exception as e:
-        logger.warning(f"Could not auto-connect on startup: {e}")
+        logger.warning(f"Could not complete intelligent startup: {e}")
 
     yield
     logger.info("WhatsApp Automation Web Backend shutting down...")

@@ -441,6 +441,27 @@ class DatabaseManager:
                     )
                 """)
 
+                # Ensure separate persistence columns exist for preferred personal profile vs active automation session
+                new_pref_cols = [
+                    ("preferred_personal_browser", "TEXT DEFAULT 'chrome'"),
+                    ("preferred_personal_profile_dir", "TEXT DEFAULT 'Profile 10'"),
+                    ("preferred_personal_profile_name", "TEXT DEFAULT 'whatsapp auto'"),
+                    ("preferred_personal_is_supported", "INTEGER DEFAULT 0"),
+                    ("selected_automation_mode", "TEXT DEFAULT 'dedicated'"),
+                    ("active_relay_session_dir", "TEXT DEFAULT '__dedicated__'"),
+                    ("active_relay_session_name", "TEXT DEFAULT 'Relay Automation Session'"),
+                    ("last_connected_browser", "TEXT DEFAULT 'chrome'"),
+                    ("last_connected_profile_dir", "TEXT DEFAULT '__dedicated__'"),
+                    ("last_connected_profile_name", "TEXT DEFAULT 'Relay Automation Session'"),
+                    ("last_connected_mode", "TEXT DEFAULT 'dedicated'"),
+                    ("last_connected_was_authenticated", "INTEGER DEFAULT 1"),
+                ]
+                for col_name, col_def in new_pref_cols:
+                    try:
+                        cursor.execute(f"ALTER TABLE browser_profile_preferences ADD COLUMN {col_name} {col_def}")
+                    except sqlite3.OperationalError:
+                        pass
+
                 # Seed default audience group if empty
                 cursor.execute("SELECT COUNT(*) as count FROM contact_groups")
                 if cursor.fetchone()["count"] == 0:
@@ -2879,7 +2900,8 @@ class DatabaseManager:
     def get_browser_profile_preference(self) -> Dict[str, Any]:
         """
         Retrieves the persistent browser profile preference singleton.
-        Auto-seeds with discovered 'whatsapp auto' profile on first use if available.
+        Cleanly separates preferred personal profile from the active Relay automation session
+        so unsupported Chrome profiles never overwrite the working persistent session.
         """
         with _lock:
             with self.get_connection() as conn:
@@ -2890,12 +2912,47 @@ class DatabaseManager:
                     res = dict(row)
                     res["remember_profile"] = bool(res.get("remember_profile", 1))
                     res["auto_connect"] = bool(res.get("auto_connect", 0))
+
+                    # Provide clean structured separation while keeping legacy keys
+                    pers_b = res.get("preferred_personal_browser") or res.get("browser_id") or "chrome"
+                    pers_p = res.get("preferred_personal_profile_dir") or res.get("canonical_profile_dir") or "Profile 10"
+                    pers_name = res.get("preferred_personal_profile_name") or res.get("profile_display_name") or "whatsapp auto"
+
+                    # Check automation support for personal profile non-destructively
+                    from browser_manager import BrowserManager
+                    is_supp, unsupp_r, _ = BrowserManager.is_profile_automation_supported(
+                        pers_b, profile_dir=pers_p, is_dedicated=False
+                    )
+
+                    res["preferred_personal_profile"] = {
+                        "browser": pers_b,
+                        "profile_dir": pers_p,
+                        "profile_name": pers_name,
+                        "is_supported": is_supp,
+                        "unsupported_reason": unsupp_r if not is_supp else ""
+                    }
+                    res["selected_automation_mode"] = res.get("selected_automation_mode") or res.get("connection_mode") or "dedicated"
+                    res["active_relay_session"] = {
+                        "browser": "chrome",
+                        "profile_dir": res.get("active_relay_session_dir") or "__dedicated__",
+                        "profile_name": res.get("active_relay_session_name") or "Relay Automation Session",
+                        "is_dedicated": True,
+                        "is_supported": True
+                    }
+                    res["last_connected_session"] = {
+                        "browser": res.get("last_connected_browser") or "chrome",
+                        "profile_dir": res.get("last_connected_profile_dir") or "__dedicated__",
+                        "profile_name": res.get("last_connected_profile_name") or "Relay Automation Session",
+                        "mode": res.get("last_connected_mode") or "dedicated",
+                        "connected_at": res.get("last_connected_at"),
+                        "was_authenticated": bool(res.get("last_connected_was_authenticated", 1))
+                    }
                     return res
 
                 return self._seed_default_browser_preference(conn)
 
     def _seed_default_browser_preference(self, conn) -> Dict[str, Any]:
-        """Discovers local Chrome profiles and seeds 'whatsapp auto' or dedicated profile."""
+        """Discovers local Chrome profiles and seeds preferred personal profile and dedicated automation session."""
         cursor = conn.cursor()
         now = datetime.now().isoformat()
 
@@ -2905,6 +2962,9 @@ class DatabaseManager:
         profile_display_name = "Dedicated WhatsApp Session"
         canonical_profile_dir = "__dedicated__"
         connection_mode = "dedicated"
+        personal_profile_dir = "Profile 10"
+        personal_display_name = "whatsapp auto"
+        personal_is_supported = 0
 
         try:
             from browser_manager import BrowserManager
@@ -2915,9 +2975,12 @@ class DatabaseManager:
                 for p in profiles:
                     dname = (p.get("display_name") or p.get("name") or "").lower()
                     if "whatsapp auto" in dname:
-                        canonical_profile_dir = p.get("dir", "Profile 10")
-                        profile_display_name = p.get("display_name") or "whatsapp auto"
-                        connection_mode = "existing_profile"
+                        personal_profile_dir = p.get("dir", "Profile 10")
+                        personal_display_name = p.get("display_name") or "whatsapp auto"
+                        is_supp, _, _ = BrowserManager.is_profile_automation_supported(
+                            "chrome", profile_dir=personal_profile_dir, is_dedicated=False
+                        )
+                        personal_is_supported = 1 if is_supp else 0
                         break
         except Exception:
             pass
@@ -2926,12 +2989,28 @@ class DatabaseManager:
             INSERT OR REPLACE INTO browser_profile_preferences (
                 id, browser_id, browser_family, browser_exe_path,
                 profile_display_name, canonical_profile_dir, connection_mode,
+                preferred_personal_browser, preferred_personal_profile_dir,
+                preferred_personal_profile_name, preferred_personal_is_supported,
+                selected_automation_mode, active_relay_session_dir, active_relay_session_name,
+                last_connected_browser, last_connected_profile_dir, last_connected_profile_name,
+                last_connected_mode, last_connected_was_authenticated,
                 remember_profile, auto_connect, last_selected_at, last_connected_at,
                 schema_version, created_at, updated_at
-            ) VALUES (1, ?, ?, ?, ?, ?, ?, 1, 0, ?, NULL, 1, ?, ?)
+            ) VALUES (
+                1, ?, ?, ?,
+                ?, ?, ?,
+                ?, ?,
+                ?, ?,
+                'dedicated', '__dedicated__', 'Relay Automation Session',
+                'chrome', '__dedicated__', 'Relay Automation Session',
+                'dedicated', 1,
+                1, 0, ?, NULL, 1, ?, ?
+            )
         """, (
             browser_id, browser_family, browser_exe_path,
-            profile_display_name, canonical_profile_dir, connection_mode,
+            personal_display_name, personal_profile_dir, "existing_profile",
+            browser_id, personal_profile_dir,
+            personal_display_name, personal_is_supported,
             now, now, now
         ))
         conn.commit()
@@ -2941,7 +3020,7 @@ class DatabaseManager:
         res = dict(row)
         res["remember_profile"] = bool(res.get("remember_profile", 1))
         res["auto_connect"] = bool(res.get("auto_connect", 0))
-        return res
+        return self.get_browser_profile_preference()
 
     def save_browser_profile_preference(
         self,
@@ -2952,9 +3031,10 @@ class DatabaseManager:
         remember_profile: bool = True,
         auto_connect: bool = False,
         browser_exe_path: Optional[str] = None,
-        browser_family: Optional[str] = None
+        browser_family: Optional[str] = None,
+        selected_mode: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Persists the user's explicitly selected browser profile preference."""
+        """Persists the user's browser profile preference while keeping personal vs automation tracking separated."""
         with _lock:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
@@ -2970,15 +3050,34 @@ class DatabaseManager:
                     except Exception:
                         browser_exe_path = ""
 
+                is_dedicated = (canonical_profile_dir == "__dedicated__")
+                mode = selected_mode or ("dedicated" if is_dedicated else connection_mode)
+
+                from browser_manager import BrowserManager
+                is_supp, _, _ = BrowserManager.is_profile_automation_supported(
+                    browser_id, profile_dir=canonical_profile_dir, is_dedicated=is_dedicated
+                )
+
+                # If user selected an existing personal profile, remember it under preferred_personal_*
+                pers_b = browser_id if not is_dedicated else "chrome"
+                pers_p = canonical_profile_dir if not is_dedicated else "Profile 10"
+                pers_name = profile_display_name if not is_dedicated else "whatsapp auto"
+
                 cursor.execute("""
                     INSERT OR REPLACE INTO browser_profile_preferences (
                         id, browser_id, browser_family, browser_exe_path,
                         profile_display_name, canonical_profile_dir, connection_mode,
+                        preferred_personal_browser, preferred_personal_profile_dir,
+                        preferred_personal_profile_name, preferred_personal_is_supported,
+                        selected_automation_mode, active_relay_session_dir, active_relay_session_name,
                         remember_profile, auto_connect, last_selected_at,
                         schema_version, created_at, updated_at
                     ) VALUES (
                         1, ?, ?, ?,
                         ?, ?, ?,
+                        ?, ?,
+                        ?, ?,
+                        ?, '__dedicated__', 'Relay Automation Session',
                         ?, ?, ?,
                         1,
                         COALESCE((SELECT created_at FROM browser_profile_preferences WHERE id = 1), ?),
@@ -2986,7 +3085,10 @@ class DatabaseManager:
                     )
                 """, (
                     browser_id, family, browser_exe_path,
-                    profile_display_name, canonical_profile_dir, connection_mode,
+                    profile_display_name, canonical_profile_dir, mode,
+                    pers_b, pers_p,
+                    pers_name, 1 if (is_supp and not is_dedicated) else 0,
+                    mode,
                     1 if remember_profile else 0,
                     1 if auto_connect else 0,
                     now, now, now
@@ -2994,13 +3096,30 @@ class DatabaseManager:
                 conn.commit()
                 return self.get_browser_profile_preference()
 
-    def update_browser_last_connected(self):
-        """Updates last_connected_at timestamp upon successful WhatsApp connection."""
+    def update_browser_last_connected(
+        self,
+        browser: str = "chrome",
+        profile_dir: str = "__dedicated__",
+        profile_name: str = "Relay Automation Session",
+        mode: str = "dedicated",
+        was_authenticated: bool = True
+    ):
+        """Updates last_connected metadata upon successful WhatsApp Web authentication."""
         with _lock:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 now = datetime.now().isoformat()
-                cursor.execute("UPDATE browser_profile_preferences SET last_connected_at = ?, updated_at = ? WHERE id = 1", (now, now))
+                cursor.execute("""
+                    UPDATE browser_profile_preferences SET
+                        last_connected_at = ?,
+                        last_connected_browser = ?,
+                        last_connected_profile_dir = ?,
+                        last_connected_profile_name = ?,
+                        last_connected_mode = ?,
+                        last_connected_was_authenticated = ?,
+                        updated_at = ?
+                    WHERE id = 1
+                """, (now, browser, profile_dir, profile_name, mode, 1 if was_authenticated else 0, now))
                 conn.commit()
 
 

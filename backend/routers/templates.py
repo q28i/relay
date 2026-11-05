@@ -661,6 +661,7 @@ def launch_template_campaign(template_id: int, payload: LaunchTemplateCampaignRe
 
 
 @router.post("/{template_id}/save")
+@router.put("/{template_id}/save")
 def save_complete_template(template_id: int, payload: TemplateSaveRequest):
     """
     Atomically saves complete template configuration:
@@ -668,7 +669,10 @@ def save_complete_template(template_id: int, payload: TemplateSaveRequest):
     """
     tpl = db.get_template(template_id)
     if not tpl:
-        raise HTTPException(status_code=404, detail="Template not found")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Template #{template_id} was not found in the database. It may have been deleted or not yet created."
+        )
     try:
         updated = db.save_complete_template(template_id, payload.dict(exclude_unset=True))
         db.log_event("INFO", "Templates", f"Saved full configuration for template #{template_id} '{updated.get('name')}'")

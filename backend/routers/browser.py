@@ -260,14 +260,30 @@ def get_browser_selection():
         "last_checked_at": live_mon.get("last_checked_at")
     }
 
-    preferred_profile = {
-        "browser": b_key,
-        "browser_name": b_name,
-        "profile_dir": p_dir,
-        "profile_name": p_name,
-        "is_supported": diag.get("is_automation_supported", True),
-        "unsupported_reason": diag.get("safe_error_reason", "") if not diag.get("is_automation_supported", True) else ""
-    }
+    pers_pref = pref.get("preferred_personal_profile") if pref else None
+    if pers_pref:
+        pers_b = pers_pref.get("browser", "chrome")
+        pers_p = pers_pref.get("profile_dir", "Profile 10")
+        pers_name = pers_pref.get("profile_name", "whatsapp auto")
+        pers_supp = pers_pref.get("is_supported", False)
+        pers_reason = pers_pref.get("unsupported_reason", "")
+        preferred_profile = {
+            "browser": pers_b,
+            "browser_name": BrowserManager.BROWSERS.get(pers_b, {}).get("name", pers_b.title()),
+            "profile_dir": pers_p,
+            "profile_name": pers_name,
+            "is_supported": pers_supp,
+            "unsupported_reason": pers_reason
+        }
+    else:
+        preferred_profile = {
+            "browser": b_key,
+            "browser_name": b_name,
+            "profile_dir": p_dir,
+            "profile_name": p_name,
+            "is_supported": diag.get("is_automation_supported", True),
+            "unsupported_reason": diag.get("safe_error_reason", "") if not diag.get("is_automation_supported", True) else ""
+        }
 
     return {
         # Structured separation
@@ -485,6 +501,9 @@ def reset_to_dedicated_profile():
 
     cm = ConfigManager()
     cfg = cm.get_config()
+    cfg.browser = "chrome"
+    cfg.profile_dir = "__dedicated__"
+    cfg.profile_name = "Dedicated WhatsApp Session"
     cfg.connection_status = "Not checked"
     cm.save_config(cfg)
     connection_monitor.stop_monitoring()
@@ -492,6 +511,17 @@ def reset_to_dedicated_profile():
     pref = db.get_browser_profile_preference()
     rem = bool(pref.get("remember_profile", 1) if pref else True)
     auto = bool(pref.get("auto_connect", 0) if pref else False)
+
+    db.save_browser_profile_preference(
+        browser_id="chrome",
+        browser_family="chrome",
+        browser_exe_path="",
+        profile_display_name="Dedicated WhatsApp Session",
+        canonical_profile_dir="__dedicated__",
+        connection_mode="dedicated",
+        remember_profile=rem,
+        auto_connect=auto
+    )
 
     b_key = getattr(cfg, "browser", "chrome") or "chrome"
     p_dir = getattr(cfg, "profile_dir", "__dedicated__") or "__dedicated__"

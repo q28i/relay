@@ -128,13 +128,21 @@ class ConnectionMonitor:
             self._profile_name = getattr(cfg, "profile_name", "Dedicated WhatsApp Session") or "Dedicated WhatsApp Session"
 
             if pref and pref.get("remember_profile", 1):
-                pref_b = pref.get("browser_id")
-                pref_p = pref.get("canonical_profile_dir")
-                pref_name = pref.get("profile_display_name")
-                if pref_b and pref_p and (self._profile_dir == "__dedicated__" or not getattr(cfg, "profile_dir", None)):
-                    self._browser_key = pref_b
-                    self._profile_dir = pref_p
-                    self._profile_name = pref_name or pref_p
+                pref_mode = pref.get("selected_automation_mode") or pref.get("connection_mode") or "dedicated"
+                if pref_mode == "existing_profile":
+                    pers = pref.get("preferred_personal_profile") or {}
+                    if pers.get("is_supported", False):
+                        self._browser_key = pers.get("browser", "chrome")
+                        self._profile_dir = pers.get("profile_dir", "Profile 10")
+                        self._profile_name = pers.get("profile_name", "whatsapp auto")
+                    else:
+                        self._browser_key = "chrome"
+                        self._profile_dir = "__dedicated__"
+                        self._profile_name = "Relay Automation Session"
+                elif pref_mode == "dedicated":
+                    self._browser_key = "chrome"
+                    self._profile_dir = "__dedicated__"
+                    self._profile_name = "Relay Automation Session"
 
             self._is_dedicated = (self._profile_dir == "__dedicated__")
         except Exception:
@@ -150,7 +158,7 @@ class ConnectionMonitor:
         ]
 
     def _update_timeline_step(self, step_id: str, status: str):
-        now_str = datetime.now().strftime("%H:%M:%S")
+        now_str = datetime.now().isoformat()
         for item in self._timeline:
             if item["id"] == step_id:
                 item["status"] = status
@@ -595,6 +603,17 @@ class ConnectionMonitor:
                     self._is_reconnecting = False
                     self._update_timeline_step("login_confirmed", "completed")
                     self._update_timeline_step("connection_ready", "completed")
+                    try:
+                        from backend.database import db
+                        db.update_browser_last_connected(
+                            browser=self._browser_key,
+                            profile_dir=self._profile_dir,
+                            profile_name=self._profile_name,
+                            mode="dedicated" if self._is_dedicated else "existing_profile",
+                            was_authenticated=True
+                        )
+                    except Exception:
+                        pass
                     if cur_st != ConnectionState.CONNECTED:
                         self._transition_to(
                             ConnectionState.CONNECTED,
@@ -782,6 +801,22 @@ class ConnectionMonitor:
 
         elif act in ("use_dedicated", "use_persistent_relay"):
             self._active_session_name = "Relay Automation"
+            try:
+                cm = ConfigManager()
+                cfg = cm.get_config()
+                cfg.browser = "chrome"
+                cfg.profile_dir = "__dedicated__"
+                cfg.profile_name = "Relay Automation Session"
+                cm.save_config(cfg)
+                from backend.database import db
+                db.save_browser_profile_preference(
+                    browser_id="chrome",
+                    profile_display_name="Relay Automation Session",
+                    canonical_profile_dir="__dedicated__",
+                    connection_mode="dedicated"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to persist dedicated preference in action: {e}")
             return self.start_monitoring(browser_key="chrome", profile_dir="__dedicated__", profile_name="Relay Automation", headless=False, force_restart=True)
 
         elif act == "disconnect":
@@ -1023,25 +1058,40 @@ class ConnectionMonitor:
             except Exception:
                 pass
 
-            pref_b_key = pref.get("browser_id", b_key) if pref else b_key
-            pref_p_dir = pref.get("canonical_profile_dir", p_dir) if pref else p_dir
-            pref_p_name = pref.get("profile_display_name", p_name) if pref else p_name
-            pref_b_name = BrowserManager.BROWSERS.get(pref_b_key, {}).get("name", pref_b_key.title())
-            is_supp, unsupp_r, _ = BrowserManager.is_profile_automation_supported(
-                pref_b_key,
-                profile_dir=pref_p_dir,
-                is_dedicated=(pref_p_dir == "__dedicated__"),
-                exe_path=BrowserManager.BROWSERS.get(pref_b_key, {}).get("exe_path")
-            )
-
-            preferred_profile = {
-                "browser": pref_b_key,
-                "browser_name": pref_b_name,
-                "profile_dir": pref_p_dir,
-                "profile_name": pref_p_name,
-                "is_supported": is_supp,
-                "unsupported_reason": unsupp_r if not is_supp else ""
-            }
+            pers_pref = pref.get("preferred_personal_profile") if pref else None
+            if pers_pref:
+                pers_b = pers_pref.get("browser", "chrome")
+                pers_p = pers_pref.get("profile_dir", "Profile 10")
+                pers_name = pers_pref.get("profile_name", "whatsapp auto")
+                pers_supp = pers_pref.get("is_supported", False)
+                pers_reason = pers_pref.get("unsupported_reason", "")
+                preferred_profile = {
+                    "browser": pers_b,
+                    "browser_name": BrowserManager.BROWSERS.get(pers_b, {}).get("name", pers_b.title()),
+                    "profile_dir": pers_p,
+                    "profile_name": pers_name,
+                    "is_supported": pers_supp,
+                    "unsupported_reason": pers_reason
+                }
+            else:
+                pref_b_key = pref.get("browser_id", b_key) if pref else b_key
+                pref_p_dir = pref.get("canonical_profile_dir", p_dir) if pref else p_dir
+                pref_p_name = pref.get("profile_display_name", p_name) if pref else p_name
+                pref_b_name = BrowserManager.BROWSERS.get(pref_b_key, {}).get("name", pref_b_key.title())
+                is_supp, unsupp_r, _ = BrowserManager.is_profile_automation_supported(
+                    pref_b_key,
+                    profile_dir=pref_p_dir,
+                    is_dedicated=(pref_p_dir == "__dedicated__"),
+                    exe_path=BrowserManager.BROWSERS.get(pref_b_key, {}).get("exe_path")
+                )
+                preferred_profile = {
+                    "browser": pref_b_key,
+                    "browser_name": pref_b_name,
+                    "profile_dir": pref_p_dir,
+                    "profile_name": pref_p_name,
+                    "is_supported": is_supp,
+                    "unsupported_reason": unsupp_r if not is_supp else ""
+                }
 
             remember_profile = bool(pref.get("remember_profile", 1) if pref else True)
             auto_connect = bool(pref.get("auto_connect", 0) if pref else False)
