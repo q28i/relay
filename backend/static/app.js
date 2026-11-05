@@ -55,9 +55,16 @@ class WhatsAppDashboardApp {
     this.activeJobPollTimer = null;
     this.isExecutingConnAction = false;
 
+    this.isTemplateDirty = false;
+    this.recipientActivityFilter = 'ALL';
+    this.recipientActivitySearch = '';
+    this.activeDrawerItemId = null;
+    this.renamingMediaId = null;
+
     this.initTheme();
     this.initNavigation();
     this.initModalListeners();
+    this.initKeyboardShortcuts();
     this.initDraftRecovery();
     this.initCampaignDraftRecovery();
     this.initPrivacyMode();
@@ -67,6 +74,18 @@ class WhatsAppDashboardApp {
     this.loadInitialData();
     this.startConnectionPolling();
     this.startActiveJobPolling();
+  }
+
+  initKeyboardShortcuts() {
+    window.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        const editorView = document.getElementById('template-editor-view');
+        if (this.activeTemplateId && editorView && editorView.style.display !== 'none') {
+          e.preventDefault();
+          this.saveActiveTemplate();
+        }
+      }
+    });
   }
 
   initRadioCardFocus() {
@@ -6547,12 +6566,17 @@ class WhatsAppDashboardApp {
       const nameInput = document.getElementById('tpl-edit-name-input');
       if (nameInput) nameInput.value = t.name || '';
 
+      const formatSelect = document.getElementById('tpl-message-format-select');
+      if (formatSelect) formatSelect.value = t.message_format || 'image_with_caption';
+
       const mode = t.content_selection_mode || 'mix_variations';
       const btnMix = document.getElementById('btn-mode-mix');
       const btnSame = document.getElementById('btn-mode-same');
       if (btnMix) btnMix.classList.toggle('active', mode === 'mix_variations');
       if (btnSame) btnSame.classList.toggle('active', mode === 'same_for_everyone');
 
+      this.isTemplateDirty = false;
+      this.setTemplateSaveStatus('saved');
       this.updateTemplateEditorConnectionPill();
 
       // 2. Render Sections
@@ -6570,6 +6594,7 @@ class WhatsAppDashboardApp {
   closeTemplateEditor() {
     this.activeTemplateId = null;
     this.activeTemplate = null;
+    this.isTemplateDirty = false;
     const listView = document.getElementById('template-list-view');
     const editorView = document.getElementById('template-editor-view');
     if (listView) listView.style.display = 'block';
@@ -6595,23 +6620,117 @@ class WhatsAppDashboardApp {
     }
   }
 
-  async saveActiveTemplateMeta() {
-    if (!this.activeTemplateId) return;
-    const nameInput = document.getElementById('tpl-edit-name-input');
-    const newName = nameInput ? nameInput.value.trim() : '';
-    if (!newName) return;
+  markTemplateDirty() {
+    this.isTemplateDirty = true;
+    this.setTemplateSaveStatus('dirty');
+  }
+
+  setTemplateSaveStatus(status) {
+    const badge = document.getElementById('tpl-save-status-badge');
+    const btn = document.getElementById('btn-save-template');
+    if (!badge) return;
+
+    if (status === 'dirty') {
+      badge.className = 'badge badge-warning';
+      badge.textContent = 'Unsaved changes';
+      badge.style.display = 'inline-block';
+      if (btn) btn.disabled = false;
+    } else if (status === 'saving') {
+      badge.className = 'badge badge-info';
+      badge.textContent = 'Saving...';
+      badge.style.display = 'inline-block';
+      if (btn) btn.disabled = true;
+    } else if (status === 'saved') {
+      badge.className = 'badge badge-success';
+      const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      badge.textContent = `Saved (${timeStr})`;
+      badge.style.display = 'inline-block';
+      if (btn) btn.disabled = false;
+    } else if (status === 'error') {
+      badge.className = 'badge badge-danger';
+      badge.textContent = 'Save failed — Retry';
+      badge.style.display = 'inline-block';
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async saveActiveTemplate() {
+    if (!this.activeTemplateId) return false;
+    this.setTemplateSaveStatus('saving');
 
     try {
-      await this.api(`/api/templates/${this.activeTemplateId}`, {
-        method: 'PUT',
+      const nameInput = document.getElementById('tpl-edit-name-input');
+      const formatSelect = document.getElementById('tpl-message-format-select');
+      const groupSelect = document.getElementById('tpl-contact-group-select');
+
+      const name = nameInput ? nameInput.value.trim() : (this.activeTemplate ? this.activeTemplate.name : 'Untitled Template');
+      const message_format = formatSelect ? formatSelect.value : 'image_with_caption';
+      const target_group = groupSelect ? groupSelect.value : (this.activeTemplate ? this.activeTemplate.target_group : 'All');
+      const mode = (this.activeTemplate && this.activeTemplate.content_selection_mode) || 'mix_variations';
+
+      // Harvest text variations directly from DOM to avoid stale blur data
+      const texts = [];
+      if (this.activeTemplate && this.activeTemplate.text_variations) {
+        for (const tv of this.activeTemplate.text_variations) {
+          const textarea = document.getElementById(`tpl-var-text-${tv.id}`);
+          const content = textarea ? textarea.value : tv.content;
+          texts.push({
+            id: tv.id,
+            content: content,
+            is_active: tv.is_active !== undefined ? tv.is_active : 1
+          });
+        }
+      }
+
+      // Harvest media assets
+      const media = (this.activeTemplate && this.activeTemplate.media_assets) || [];
+
+      // Harvest excluded contacts
+      const excludedIds = [];
+      if (this.allTemplateContacts && this.templateSelectedContactIds) {
+        for (const c of this.allTemplateContacts) {
+          if (!this.templateSelectedContactIds.has(c.id)) {
+            excludedIds.push(c.id);
+          }
+        }
+      }
+
+      const payload = {
+        name: name,
+        description: (this.activeTemplate && this.activeTemplate.description) || '',
+        content_selection_mode: mode,
+        message_format: message_format,
+        target_group: target_group,
+        pacing_delay_min: (this.activeTemplate && this.activeTemplate.pacing_delay_min) || 8,
+        pacing_delay_max: (this.activeTemplate && this.activeTemplate.pacing_delay_max) || 16,
+        text_variations: texts,
+        media_assets: media.map(m => ({ id: m.id, is_active: m.is_active !== 0 ? 1 : 0 })),
+        excluded_contact_ids: excludedIds
+      };
+
+      const res = await this.api(`/api/templates/${this.activeTemplateId}/save`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newName })
+        body: JSON.stringify(payload)
       });
-      if (this.activeTemplate) this.activeTemplate.name = newName;
-      this.showToast('Template renamed', 'info');
+
+      if (res && res.template) {
+        this.activeTemplate = res.template;
+      }
+      this.isTemplateDirty = false;
+      this.setTemplateSaveStatus('saved');
+      this.showToast('Template saved', 'success');
+      return true;
     } catch (e) {
-      console.error('Failed to rename template:', e);
+      console.error('Failed to save template:', e);
+      this.setTemplateSaveStatus('error');
+      this.showToast('Failed to save template: ' + (e.message || e), 'error');
+      return false;
     }
+  }
+
+  async saveActiveTemplateMeta() {
+    return this.saveActiveTemplate();
   }
 
   async setActiveTemplateMode(mode) {
@@ -7167,7 +7286,7 @@ class WhatsAppDashboardApp {
             </div>
           </div>
 
-          <textarea class="form-textarea" id="tpl-var-text-${t.id}" rows="3" placeholder="Compose message copy with variables..." style="font-size: 0.85rem;" oninput="document.getElementById('tpl-char-cnt-${t.id}').textContent = this.value.length + ' chars'" onblur="app.updateTextVariation(${t.id}, 'text_content', this.value)">${this.escapeHtml(t.content || '')}</textarea>
+          <textarea class="form-textarea" id="tpl-var-text-${t.id}" rows="3" placeholder="Compose message copy with variables..." style="font-size: 0.85rem;" oninput="app.markTemplateDirty(); document.getElementById('tpl-char-cnt-${t.id}').textContent = this.value.length + ' chars'" onblur="app.updateTextVariation(${t.id}, 'text_content', this.value)">${this.escapeHtml(t.content || '')}</textarea>
         </div>
       `;
     }).join('');
@@ -7431,6 +7550,10 @@ class WhatsAppDashboardApp {
     if (!tid) return;
     this.activeTemplateId = tid;
 
+    if (this.isTemplateDirty) {
+      await this.saveActiveTemplate();
+    }
+
     try {
       const t = await this.api(`/api/templates/${tid}`);
       this.activeTemplate = t;
@@ -7525,6 +7648,8 @@ class WhatsAppDashboardApp {
     const campaignName = nameInput ? nameInput.value.trim() : '';
     const minDelay = pacingMinInput ? parseFloat(pacingMinInput.value) : 8;
     const maxDelay = pacingMaxInput ? parseFloat(pacingMaxInput.value) : 16;
+    const formatSelect = document.getElementById('tpl-message-format-select');
+    const msgFormat = (this.activeTemplate && this.activeTemplate.message_format) || (formatSelect ? formatSelect.value : 'image_with_caption');
 
     try {
       const res = await this.api(`/api/templates/${this.activeTemplateId}/launch`, {
@@ -7533,7 +7658,8 @@ class WhatsAppDashboardApp {
         body: JSON.stringify({
           campaign_name: campaignName,
           pacing_delay_min: minDelay,
-          pacing_delay_max: maxDelay
+          pacing_delay_max: maxDelay,
+          message_format: msgFormat
         })
       });
 
@@ -7561,14 +7687,21 @@ class WhatsAppDashboardApp {
       const grid = document.getElementById('medialib-grid');
       const emptyState = document.getElementById('medialib-empty-state');
       const bulkBar = document.getElementById('medialib-bulk-bar');
+      const masterChk = document.getElementById('chk-master-medialib');
 
       this.selectedMediaLibraryIds.clear();
       if (bulkBar) bulkBar.style.display = 'none';
+      if (masterChk) {
+        masterChk.checked = false;
+        masterChk.indeterminate = false;
+      }
 
       let filtered = assets || [];
       if (filter === 'image') filtered = filtered.filter(a => (a.mime_type || '').startsWith('image/'));
       if (filter === 'video') filtered = filtered.filter(a => (a.mime_type || '').startsWith('video/'));
       if (filter === 'document') filtered = filtered.filter(a => (a.mime_type || '') === 'application/pdf');
+
+      this.currentMediaAssets = filtered;
 
       if (countLabel) countLabel.textContent = `${filtered.length} durable assets in storage`;
 
@@ -7586,37 +7719,45 @@ class WhatsAppDashboardApp {
         const isVid = (a.mime_type || '').startsWith('video/');
         const isPdf = (a.mime_type || '') === 'application/pdf';
 
+        let badgeType = 'FILE';
+        if (isImg) badgeType = (a.mime_type || 'image/jpeg').split('/')[1].toUpperCase();
+        else if (isVid) badgeType = 'VIDEO';
+        else if (isPdf) badgeType = 'PDF';
+
         let thumbMarkup = '';
         if (isImg) {
-          thumbMarkup = `<img src="/api/media/${a.id}/file" alt="${this.escapeHtml(a.filename)}" style="cursor: pointer;" onclick="app.openMediaPreviewModal(${a.id})">`;
+          thumbMarkup = `<img src="/api/media/${a.id}/file" alt="${this.escapeHtml(a.title || a.filename)}" style="cursor: pointer; width: 100%; height: 100%; object-fit: cover;" onclick="app.openMediaPreviewModal(${a.id})">`;
         } else {
           const icon = isPdf ? '📄 PDF' : (isVid ? '🎬 Video' : '📎 File');
           thumbMarkup = `<div style="font-weight: 700; color: var(--text-muted); cursor: pointer;" onclick="app.openMediaPreviewModal(${a.id})">${icon}</div>`;
         }
 
+        const displayTitle = a.title || a.filename || `Asset #${a.id}`;
+
         return `
           <div class="media-set-card-item" id="medialib-card-${a.id}">
             <div class="media-set-card-header">
-              <input type="checkbox" style="cursor: pointer; accent-color: var(--primary);" onchange="app.toggleSelectMediaLibrary(${a.id}, this.checked)">
-              <span style="font-size: 0.68rem; color: var(--text-muted);">${(a.mime_type || '').split('/')[1] || 'FILE'}</span>
+              <input type="checkbox" id="chk-medialib-${a.id}" style="cursor: pointer; accent-color: var(--primary);" onchange="app.toggleSelectMediaLibrary(${a.id}, this.checked)">
+              <span class="badge badge-neutral" style="font-size: 0.68rem;">${badgeType}</span>
             </div>
 
-            <div class="media-set-thumb-box">
+            <div class="media-set-thumb-box" style="height: 120px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: var(--surface-subtle);">
               ${thumbMarkup}
             </div>
 
-            <div class="media-set-card-title" title="${this.escapeHtml(a.filename)}">
-              ${this.escapeHtml(a.filename)}
+            <div class="media-set-card-title" title="${this.escapeHtml(displayTitle)}" style="font-weight: 600; font-size: 0.82rem; margin-top: 0.4rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+              ${this.escapeHtml(displayTitle)}
             </div>
 
-            <div class="media-set-card-meta">
+            <div class="media-set-card-meta" style="font-size: 0.72rem; color: var(--text-muted); display: flex; justify-content: space-between; margin-top: 0.25rem;">
               <span>${this.formatBytes(a.file_size)}</span>
               <span>${(a.created_at || '').substring(0, 10)}</span>
             </div>
 
-            <div class="media-set-card-actions">
+            <div class="media-set-card-actions" style="display: flex; gap: 0.35rem; margin-top: 0.5rem; justify-content: flex-end;">
               <button type="button" class="btn btn-subtle btn-xs" onclick="app.openMediaPreviewModal(${a.id})">Preview</button>
-              <button type="button" class="btn btn-subtle btn-xs text-danger" onclick="app.deleteMediaPermanently(${a.id}, '${this.escapeHtml(a.filename)}')">Delete</button>
+              <button type="button" class="btn btn-subtle btn-xs" onclick="app.openRenameMediaModal(${a.id}, '${this.escapeHtml(displayTitle)}')">Rename</button>
+              <button type="button" class="btn btn-subtle btn-xs text-danger" onclick="app.deleteMediaPermanently(${a.id}, '${this.escapeHtml(displayTitle)}')">Delete</button>
             </div>
           </div>
         `;
@@ -7656,10 +7797,56 @@ class WhatsAppDashboardApp {
 
     const bulkBar = document.getElementById('medialib-bulk-bar');
     const countLabel = document.getElementById('medialib-bulk-count');
+    const masterChk = document.getElementById('chk-master-medialib');
+
+    const totalCount = (this.currentMediaAssets || []).length;
+    const selectedCount = this.selectedMediaLibraryIds.size;
+
+    if (bulkBar && countLabel) {
+      bulkBar.style.display = selectedCount > 0 ? 'flex' : 'none';
+      countLabel.textContent = `${selectedCount} selected`;
+    }
+
+    if (masterChk) {
+      if (selectedCount === 0) {
+        masterChk.checked = false;
+        masterChk.indeterminate = false;
+      } else if (selectedCount === totalCount && totalCount > 0) {
+        masterChk.checked = true;
+        masterChk.indeterminate = false;
+      } else {
+        masterChk.checked = false;
+        masterChk.indeterminate = true;
+      }
+    }
+  }
+
+  toggleSelectAllMediaLibrary(checked) {
+    const assets = this.currentMediaAssets || [];
+    this.selectedMediaLibraryIds.clear();
+
+    if (checked) {
+      assets.forEach(a => this.selectedMediaLibraryIds.add(a.id));
+    }
+
+    assets.forEach(a => {
+      const chk = document.getElementById(`chk-medialib-${a.id}`);
+      if (chk) chk.checked = checked;
+    });
+
+    const bulkBar = document.getElementById('medialib-bulk-bar');
+    const countLabel = document.getElementById('medialib-bulk-count');
+    const masterChk = document.getElementById('chk-master-medialib');
+
     if (bulkBar && countLabel) {
       const size = this.selectedMediaLibraryIds.size;
       bulkBar.style.display = size > 0 ? 'flex' : 'none';
       countLabel.textContent = `${size} selected`;
+    }
+
+    if (masterChk) {
+      masterChk.checked = checked;
+      masterChk.indeterminate = false;
     }
   }
 
@@ -7667,7 +7854,52 @@ class WhatsAppDashboardApp {
     this.selectedMediaLibraryIds.clear();
     const bulkBar = document.getElementById('medialib-bulk-bar');
     if (bulkBar) bulkBar.style.display = 'none';
-    this.loadMediaLibrary(this.mediaLibraryFilter || 'all');
+    const masterChk = document.getElementById('chk-master-medialib');
+    if (masterChk) {
+      masterChk.checked = false;
+      masterChk.indeterminate = false;
+    }
+    (this.currentMediaAssets || []).forEach(a => {
+      const chk = document.getElementById(`chk-medialib-${a.id}`);
+      if (chk) chk.checked = false;
+    });
+  }
+
+  openRenameMediaModal(assetId, currentTitle) {
+    this.renamingMediaId = assetId;
+    const input = document.getElementById('rename-media-input');
+    if (input) input.value = currentTitle || '';
+    this.openModal('modal-rename-media');
+    setTimeout(() => {
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    }, 100);
+  }
+
+  async submitRenameMedia() {
+    if (!this.renamingMediaId) return;
+    const input = document.getElementById('rename-media-input');
+    const title = input ? input.value.trim() : '';
+    if (!title) {
+      this.showToast('Please enter an asset title', 'warning');
+      return;
+    }
+
+    try {
+      await this.api(`/api/media/${this.renamingMediaId}/rename`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title })
+      });
+      this.closeModal('modal-rename-media');
+      this.showToast('Media asset renamed', 'success');
+      this.loadMediaLibrary(this.mediaLibraryFilter || 'all');
+    } catch (e) {
+      console.error('Failed to rename media asset:', e);
+      this.showToast('Failed to rename media asset', 'danger');
+    }
   }
 
   async executeBulkDeleteMediaLibrary() {
@@ -7708,6 +7940,9 @@ class WhatsAppDashboardApp {
       // 2. Load past campaigns table
       const campaigns = await this.api('/api/campaigns', { silent: true }).catch(() => []);
       this.renderCampaignHistory(campaigns || []);
+
+      // 3. Load recipient activity
+      await this.loadRecipientActivity();
     } catch (e) {
       console.error('Failed to load campaigns data:', e);
     }
@@ -7832,6 +8067,269 @@ class WhatsAppDashboardApp {
       this.loadCampaignsData();
     } catch (e) {
       console.error('Failed to delete campaign:', e);
+    }
+  }
+
+  // ==========================================================================
+  // SECTION: RECIPIENT-LEVEL MESSAGING ACTIVITY & TECHNICAL AUDIT LOGS
+  // ==========================================================================
+  async loadRecipientActivity() {
+    try {
+      const status = this.recipientActivityFilter || 'ALL';
+      const search = this.recipientActivitySearch || '';
+      const params = new URLSearchParams();
+      if (status && status !== 'ALL') params.append('status', status);
+      if (search && search.trim()) params.append('search', search.trim());
+      params.append('limit', '100');
+
+      const res = await this.api(`/api/jobs/activity/items?${params.toString()}`, { silent: true }).catch(() => null);
+      const items = (res && res.items) ? res.items : (Array.isArray(res) ? res : []);
+      this.renderRecipientActivity(items);
+    } catch (e) {
+      console.error('Failed to load recipient activity:', e);
+    }
+  }
+
+  filterRecipientActivity(status) {
+    this.recipientActivityFilter = status || 'ALL';
+    ['ALL', 'SENT', 'FAILED', 'UNCERTAIN', 'PENDING'].forEach(s => {
+      const btn = document.getElementById(`act-flt-${s.toLowerCase()}`);
+      if (btn) btn.classList.toggle('active', s === this.recipientActivityFilter);
+    });
+    this.loadRecipientActivity();
+  }
+
+  searchRecipientActivity(query) {
+    this.recipientActivitySearch = query || '';
+    if (this._recSearchTimeout) clearTimeout(this._recSearchTimeout);
+    this._recSearchTimeout = setTimeout(() => {
+      this.loadRecipientActivity();
+    }, 250);
+  }
+
+  renderRecipientActivity(items) {
+    const tbody = document.getElementById('recipient-activity-tbody');
+    const emptyNotice = document.getElementById('recipient-activity-empty');
+    if (!tbody) return;
+
+    if (!items || items.length === 0) {
+      tbody.innerHTML = '';
+      if (emptyNotice) emptyNotice.style.display = 'block';
+      return;
+    }
+
+    if (emptyNotice) emptyNotice.style.display = 'none';
+
+    tbody.innerHTML = items.map(item => {
+      let statusBadge = '<span class="badge badge-neutral">Pending</span>';
+      if (item.status === 'SENT' || item.status === 'COMPLETED') {
+        statusBadge = '<span class="badge badge-success" title="Handed off to WhatsApp Web">Sent</span>';
+      } else if (item.status === 'FAILED') {
+        statusBadge = '<span class="badge badge-danger">Failed</span>';
+      } else if (item.status === 'UNCERTAIN') {
+        statusBadge = '<span class="badge badge-warning">Uncertain</span>';
+      }
+
+      let mediaDisplay = '<span style="color: var(--text-muted); font-size: 0.75rem;">Text only</span>';
+      if (item.media_filename || item.media_path) {
+        const fname = item.media_filename || (item.media_path ? item.media_path.split(/[\\/]/).pop() : 'Attachment');
+        let thumb = '';
+        if (item.media_asset_id) {
+          thumb = `<img src="/api/media/${item.media_asset_id}/file" style="width: 22px; height: 22px; object-fit: cover; border-radius: 3px; vertical-align: middle; margin-right: 5px;">`;
+        }
+        mediaDisplay = `<div style="display: flex; align-items: center; font-size: 0.78rem;">${thumb}<span title="${this.escapeHtml(fname)}" style="max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">📎 ${this.escapeHtml(fname)}</span></div>`;
+      }
+
+      const rawMsg = item.message || '';
+      const timeStr = item.sent_at || item.created_at || '';
+      const formattedTime = timeStr ? timeStr.substring(0, 16).replace('T', ' ') : '—';
+
+      return `
+        <tr style="cursor: pointer;" onclick="app.openRecipientDetailDrawer(${item.id})">
+          <td>
+            <strong>${this.escapeHtml(item.contact_name || 'Recipient')}</strong>
+            <div style="font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-muted);">+${this.escapeHtml(item.phone || '')}</div>
+          </td>
+          <td style="max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8rem;" title="${this.escapeHtml(rawMsg)}">
+            ${this.escapeHtml(rawMsg || '—')}
+          </td>
+          <td>${mediaDisplay}</td>
+          <td>${statusBadge}</td>
+          <td style="font-size: 0.72rem; color: var(--text-muted);">${formattedTime}</td>
+          <td style="text-align: right;" onclick="event.stopPropagation()">
+            <button type="button" class="btn btn-subtle btn-xs" onclick="app.openRecipientDetailDrawer(${item.id})">
+              Details →
+            </button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  async openRecipientDetailDrawer(itemId) {
+    this.activeDrawerItemId = itemId;
+    try {
+      const data = await this.api(`/api/jobs/activity/items/${itemId}`, { silent: true });
+      if (!data) return;
+
+      const titleEl = document.getElementById('rec-drawer-title');
+      const subEl = document.getElementById('rec-drawer-subtitle');
+      const nameEl = document.getElementById('rec-drawer-name');
+      const phoneEl = document.getElementById('rec-drawer-phone');
+      const badgeEl = document.getElementById('rec-drawer-status-badge');
+      const groupEl = document.getElementById('rec-drawer-group');
+      const formatEl = document.getElementById('rec-drawer-format');
+      const timeEl = document.getElementById('rec-drawer-dispatched');
+      const campEl = document.getElementById('rec-drawer-campaign');
+      const delivEl = document.getElementById('rec-drawer-delivery-explanation');
+      const readEl = document.getElementById('rec-drawer-read-explanation');
+      const errBox = document.getElementById('rec-drawer-error-box');
+      const errText = document.getElementById('rec-drawer-error-text');
+      const msgText = document.getElementById('rec-drawer-message-text');
+      const mediaSec = document.getElementById('rec-drawer-media-section');
+      const mediaThumb = document.getElementById('rec-drawer-media-thumb');
+      const mediaTitle = document.getElementById('rec-drawer-media-title');
+      const mediaMeta = document.getElementById('rec-drawer-media-meta');
+      const retryBtn = document.getElementById('btn-rec-retry');
+
+      if (titleEl) titleEl.textContent = `Recipient Activity #${data.id}`;
+      if (subEl) subEl.textContent = `Campaign: ${data.campaign_name || 'Broadcast'}`;
+      if (nameEl) nameEl.textContent = data.contact_name || 'Recipient';
+      if (phoneEl) phoneEl.textContent = data.phone ? `+${data.phone}` : 'No phone';
+
+      if (badgeEl) {
+        badgeEl.className = 'badge';
+        if (data.status === 'SENT' || data.status === 'COMPLETED') {
+          badgeEl.classList.add('badge-success');
+          badgeEl.textContent = 'Sent (Dispatched)';
+        } else if (data.status === 'FAILED') {
+          badgeEl.classList.add('badge-danger');
+          badgeEl.textContent = 'Failed';
+        } else if (data.status === 'UNCERTAIN') {
+          badgeEl.classList.add('badge-warning');
+          badgeEl.textContent = 'Uncertain';
+        } else {
+          badgeEl.classList.add('badge-neutral');
+          badgeEl.textContent = data.status || 'Pending';
+        }
+      }
+
+      if (groupEl) groupEl.textContent = data.group_name || 'General';
+      if (formatEl) {
+        formatEl.textContent = data.message_format === 'image_then_text' ? 'Image then separate text' : 'Image with text caption';
+      }
+      if (timeEl) {
+        const t = data.sent_at || data.created_at || '';
+        timeEl.textContent = t ? t.substring(0, 19).replace('T', ' ') : '—';
+      }
+      if (campEl) campEl.textContent = data.campaign_name || 'Ad-hoc dispatch';
+
+      if (delivEl) {
+        if (data.status === 'SENT' || data.status === 'COMPLETED') {
+          delivEl.innerHTML = '<strong>Handoff Confirmed:</strong> Message was successfully handed off to the WhatsApp Web chat input and accepted by the WhatsApp network interface.';
+        } else if (data.status === 'FAILED') {
+          delivEl.innerHTML = '<strong>Handoff Failed:</strong> The dispatch attempt failed before message transmission could complete.';
+        } else if (data.status === 'UNCERTAIN') {
+          delivEl.innerHTML = '<strong>Inconclusive Confirmation:</strong> The browser action dispatched the message payload, but the post-send confirmation check timed out. Message may or may not have reached recipient.';
+        } else {
+          delivEl.innerHTML = '<strong>Pending:</strong> Recipient is scheduled in queue waiting for pacing interval.';
+        }
+      }
+
+      if (readEl) {
+        readEl.textContent = 'Delivery status reflects browser interface handoff. Read receipts ("Blue Ticks") are unexposed in browser DOM telemetry and are never fabricated.';
+      }
+
+      if (errBox && errText) {
+        if (data.error_message) {
+          errBox.style.display = 'block';
+          errText.textContent = data.error_message;
+        } else {
+          errBox.style.display = 'none';
+        }
+      }
+
+      if (msgText) msgText.textContent = data.message || '(No text content assigned)';
+
+      const hasMedia = data.media_filename || data.media_path || data.media_asset_id;
+      if (mediaSec) {
+        if (hasMedia) {
+          mediaSec.style.display = 'block';
+          const fname = data.media_filename || (data.media_path ? data.media_path.split(/[\\/]/).pop() : 'Attachment');
+          if (mediaTitle) mediaTitle.textContent = fname;
+          if (mediaMeta) {
+            mediaMeta.textContent = data.media_asset_id ? `Library Asset ID #${data.media_asset_id}` : 'Local attachment';
+          }
+          if (mediaThumb) {
+            if (data.media_asset_id) {
+              mediaThumb.innerHTML = `<img src="/api/media/${data.media_asset_id}/file" style="width: 100%; height: 100%; object-fit: cover; cursor: pointer;" onclick="app.openMediaPreviewModal(${data.media_asset_id})">`;
+            } else {
+              mediaThumb.innerHTML = `<span style="font-size: 1.25rem;">📎</span>`;
+            }
+          }
+        } else {
+          mediaSec.style.display = 'none';
+        }
+      }
+
+      if (retryBtn) {
+        const canRetry = data.status === 'FAILED' || data.status === 'UNCERTAIN';
+        retryBtn.style.display = canRetry ? 'inline-flex' : 'none';
+      }
+
+      this.openModal('modal-recipient-drawer');
+    } catch (e) {
+      console.error('Failed to open recipient detail drawer:', e);
+      this.showToast('Could not load recipient details', 'danger');
+    }
+  }
+
+  async retryActiveDrawerRecipient() {
+    if (!this.activeDrawerItemId) return;
+    try {
+      await this.api(`/api/jobs/activity/items/${this.activeDrawerItemId}/retry`, {
+        method: 'POST'
+      });
+      this.showToast('Queued recipient for retry', 'success');
+      await this.openRecipientDetailDrawer(this.activeDrawerItemId);
+      this.loadRecipientActivity();
+    } catch (e) {
+      console.error('Failed to retry recipient:', e);
+      this.showToast('Failed to retry recipient', 'danger');
+    }
+  }
+
+  async loadTechnicalAuditLogs() {
+    const filterEl = document.getElementById('audit-level-filter');
+    const level = filterEl ? filterEl.value : 'ALL';
+    const tbody = document.getElementById('technical-audit-tbody');
+    if (!tbody) return;
+
+    try {
+      const res = await this.api(`/api/logs?level=${encodeURIComponent(level)}&limit=100`, { silent: true }).catch(() => null);
+      const logs = (res && res.logs) ? res.logs : [];
+
+      if (logs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 1rem;">No technical audit logs recorded yet.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = logs.map(l => {
+        let levelBadge = '<span class="badge badge-neutral" style="font-size: 0.65rem;">INFO</span>';
+        if (l.level === 'WARNING') levelBadge = '<span class="badge badge-warning" style="font-size: 0.65rem;">WARN</span>';
+        if (l.level === 'ERROR') levelBadge = '<span class="badge badge-danger" style="font-size: 0.65rem;">ERROR</span>';
+
+        return `
+          <tr>
+            <td style="color: var(--text-muted); white-space: nowrap;">${(l.timestamp || '').substring(0, 19).replace('T', ' ')}</td>
+            <td>${levelBadge}</td>
+            <td style="font-weight: 600; color: var(--text-secondary);">${this.escapeHtml(l.module || 'engine')}</td>
+            <td style="white-space: pre-wrap; word-break: break-word;">${this.escapeHtml(l.message || '')}</td>
+          </tr>
+        `;
+      }).join('');
+    } catch (e) {
+      console.error('Failed to load technical audit logs:', e);
     }
   }
 

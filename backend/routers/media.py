@@ -7,6 +7,7 @@ and serving media previews for the interactive conversation composer.
 import os
 import uuid
 import hashlib
+import mimetypes
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -18,7 +19,9 @@ from logger import get_logger
 logger = get_logger("MediaRouter")
 router = APIRouter(prefix="/api/media", tags=["Media Assets"])
 
-MEDIA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "uploads", "media")
+MEDIA_DIR = os.environ.get("RELAY_MEDIA_DIR") or os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "uploads", "media"
+)
 os.makedirs(MEDIA_DIR, exist_ok=True)
 MAX_MEDIA_SIZE = 15 * 1024 * 1024  # 15 MB
 
@@ -69,7 +72,10 @@ async def upload_media_asset(
     if file_size > MAX_MEDIA_SIZE:
         raise HTTPException(status_code=400, detail="Media file exceeds maximum 15 MB threshold")
 
-    content_type = file.content_type or "application/octet-stream"
+    content_type = file.content_type
+    if not content_type or content_type == "application/octet-stream":
+        guessed, _ = mimetypes.guess_type(filename)
+        content_type = guessed or "application/octet-stream"
     content_hash = hashlib.sha256(contents).hexdigest()
 
     # SHA-256 Deduplication: Reuse existing asset if file exists on disk
@@ -136,6 +142,23 @@ def delete_media_asset(asset_id: int, force: bool = Query(False)):
         raise HTTPException(status_code=404, detail={"message": msg, "code": "NOT_FOUND"})
     db.log_event("INFO", "Media", f"Deleted media asset #{asset_id}: {msg}")
     return {"success": True, "deleted_id": asset_id, "message": msg}
+
+
+class RenameMediaRequest(BaseModel):
+    title: str
+
+
+@router.patch("/{asset_id}/rename")
+@router.put("/{asset_id}/rename")
+def rename_media_asset_endpoint(asset_id: int, payload: RenameMediaRequest):
+    """Renames an existing media asset's display title."""
+    if not payload.title or not payload.title.strip():
+        raise HTTPException(status_code=400, detail="Asset title cannot be empty")
+    success = db.rename_media_asset(asset_id, payload.title.strip())
+    if not success:
+        raise HTTPException(status_code=404, detail="Media asset not found")
+    db.log_event("INFO", "Media", f"Renamed media asset #{asset_id} to '{payload.title.strip()}'")
+    return {"success": True, "asset": db.get_media_asset(asset_id)}
 
 
 class BulkDeleteMediaRequest(BaseModel):

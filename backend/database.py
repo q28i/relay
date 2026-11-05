@@ -143,6 +143,7 @@ class DatabaseManager:
                         variables_json TEXT DEFAULT '[]',
                         description TEXT DEFAULT '',
                         content_selection_mode TEXT DEFAULT 'mix_variations',
+                        message_format TEXT DEFAULT 'image_with_caption',
                         target_group TEXT DEFAULT 'All',
                         pacing_delay_min INTEGER DEFAULT 8,
                         pacing_delay_max INTEGER DEFAULT 16,
@@ -156,6 +157,8 @@ class DatabaseManager:
                 tpl_cols = {row["name"] for row in cursor.fetchall()}
                 if "content_selection_mode" not in tpl_cols:
                     cursor.execute("ALTER TABLE templates ADD COLUMN content_selection_mode TEXT DEFAULT 'mix_variations'")
+                if "message_format" not in tpl_cols:
+                    cursor.execute("ALTER TABLE templates ADD COLUMN message_format TEXT DEFAULT 'image_with_caption'")
                 if "description" not in tpl_cols:
                     cursor.execute("ALTER TABLE templates ADD COLUMN description TEXT DEFAULT ''")
                 if "target_group" not in tpl_cols:
@@ -301,6 +304,7 @@ class DatabaseManager:
                         media_path TEXT DEFAULT '',
                         media_asset_id INTEGER,
                         allocation_rule TEXT DEFAULT '',
+                        message_format TEXT DEFAULT 'image_with_caption',
                         status TEXT NOT NULL,
                         retry_count INTEGER DEFAULT 0,
                         max_retries INTEGER DEFAULT 3,
@@ -316,6 +320,8 @@ class DatabaseManager:
                     cursor.execute("ALTER TABLE campaign_queue_items ADD COLUMN media_asset_id INTEGER")
                 if "allocation_rule" not in queue_cols:
                     cursor.execute("ALTER TABLE campaign_queue_items ADD COLUMN allocation_rule TEXT DEFAULT ''")
+                if "message_format" not in queue_cols:
+                    cursor.execute("ALTER TABLE campaign_queue_items ADD COLUMN message_format TEXT DEFAULT 'image_with_caption'")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_queue_job_status ON campaign_queue_items (job_id, status)")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_queue_idempotency ON campaign_queue_items (idempotency_key)")
 
@@ -1397,19 +1403,29 @@ class DatabaseManager:
                 WHERE v.template_id = ?
                 ORDER BY v.id ASC
             """, (template_id,))
+            d["message_format"] = d.get("message_format") or "image_with_caption"
             d["variants"] = [dict(v) for v in cursor.fetchall()]
             return d
 
-    def add_template(self, name: str, content: str, variables: Optional[List[str]] = None, description: str = "", content_selection_mode: str = "mix_variations", target_group: str = "All") -> int:
+    def add_template(
+        self,
+        name: str,
+        content: str,
+        variables: Optional[List[str]] = None,
+        description: str = "",
+        content_selection_mode: str = "mix_variations",
+        target_group: str = "All",
+        message_format: str = "image_with_caption"
+    ) -> int:
         with _lock:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 now = datetime.now().isoformat()
                 vars_json = json.dumps(variables or [])
                 cursor.execute("""
-                    INSERT INTO templates (name, content, variables_json, description, content_selection_mode, target_group, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (name, content, vars_json, description, content_selection_mode, target_group, now, now))
+                    INSERT INTO templates (name, content, variables_json, description, content_selection_mode, message_format, target_group, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (name, content, vars_json, description, content_selection_mode, message_format, target_group, now, now))
                 tid = cursor.lastrowid
 
                 # Create initial text variation
@@ -1435,6 +1451,7 @@ class DatabaseManager:
         variables: Optional[List[str]] = None,
         description: Optional[str] = None,
         content_selection_mode: Optional[str] = None,
+        message_format: Optional[str] = None,
         target_group: Optional[str] = None,
         pacing_delay_min: Optional[int] = None,
         pacing_delay_max: Optional[int] = None
@@ -1460,6 +1477,9 @@ class DatabaseManager:
                 if content_selection_mode is not None:
                     fields.append("content_selection_mode = ?")
                     params.append(content_selection_mode)
+                if message_format is not None:
+                    fields.append("message_format = ?")
+                    params.append(message_format)
                 if target_group is not None:
                     fields.append("target_group = ?")
                     params.append(target_group)
@@ -1518,14 +1538,15 @@ class DatabaseManager:
                     new_name = f"{orig['name']} (Copy {int(time.time()) % 10000})"
 
                 cursor.execute("""
-                    INSERT INTO templates (name, content, variables_json, description, content_selection_mode, target_group, pacing_delay_min, pacing_delay_max, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO templates (name, content, variables_json, description, content_selection_mode, message_format, target_group, pacing_delay_min, pacing_delay_max, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     new_name,
                     orig.get("content", ""),
                     orig.get("variables_json", "[]"),
                     orig.get("description", ""),
                     orig.get("content_selection_mode", "mix_variations"),
+                    orig.get("message_format", "image_with_caption"),
                     orig.get("target_group", "All"),
                     orig.get("pacing_delay_min", 8),
                     orig.get("pacing_delay_max", 16),
@@ -1561,6 +1582,117 @@ class DatabaseManager:
 
                 conn.commit()
                 return self.get_template(new_tid)
+
+    def save_complete_template(self, template_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Atomically saves full template configuration from the editor toolbar:
+        name, description, mode, message_format, target_group, pacing delays,
+        text variations (contents and active flags), media assets (active flags), and excluded contacts.
+        """
+        with _lock:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                now = datetime.now().isoformat()
+
+                # 1. Update templates base row
+                name = data.get("name")
+                desc = data.get("description", "")
+                mode = data.get("content_selection_mode", "mix_variations")
+                msg_format = data.get("message_format", "image_with_caption")
+                grp = data.get("target_group", "All")
+                p_min = data.get("pacing_delay_min", 8)
+                p_max = data.get("pacing_delay_max", 16)
+
+                cursor.execute("""
+                    UPDATE templates
+                    SET name = COALESCE(?, name),
+                        description = ?,
+                        content_selection_mode = ?,
+                        message_format = ?,
+                        target_group = ?,
+                        pacing_delay_min = ?,
+                        pacing_delay_max = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                """, (name, desc, mode, msg_format, grp, p_min, p_max, now, template_id))
+
+                # 2. Text variations: if supplied in data, synchronize them
+                if "text_variations" in data and isinstance(data["text_variations"], list):
+                    incoming_texts = data["text_variations"]
+                    cursor.execute("SELECT id FROM template_text_variations WHERE template_id = ?", (template_id,))
+                    existing_text_ids = {r["id"] for r in cursor.fetchall()}
+                    retained_text_ids = set()
+
+                    first_text_content = ""
+                    for idx, tv in enumerate(incoming_texts):
+                        tv_content = tv.get("content", "") if isinstance(tv, dict) else str(tv)
+                        tv_active = 1 if (isinstance(tv, dict) and tv.get("is_active", True)) else 1
+                        tv_id = tv.get("id") if isinstance(tv, dict) else None
+
+                        if not first_text_content and tv_content.strip():
+                            first_text_content = tv_content
+
+                        if tv_id and tv_id in existing_text_ids:
+                            cursor.execute("""
+                                UPDATE template_text_variations
+                                SET content = ?, is_active = ?, sort_order = ?, updated_at = ?
+                                WHERE id = ? AND template_id = ?
+                            """, (tv_content, tv_active, idx, now, tv_id, template_id))
+                            retained_text_ids.add(tv_id)
+                        elif tv_content.strip():
+                            cursor.execute("""
+                                INSERT INTO template_text_variations (template_id, content, is_active, sort_order, created_at, updated_at)
+                                VALUES (?, ?, ?, ?, ?, ?)
+                            """, (template_id, tv_content, tv_active, idx, now, now))
+                            retained_text_ids.add(cursor.lastrowid)
+
+                    to_delete = existing_text_ids - retained_text_ids
+                    if to_delete:
+                        cursor.execute(f"DELETE FROM template_text_variations WHERE template_id = ? AND id IN ({','.join(['?']*len(to_delete))})", [template_id, *to_delete])
+
+                    if first_text_content:
+                        cursor.execute("UPDATE templates SET content = ? WHERE id = ?", (first_text_content, template_id))
+
+                # 3. Media assets: if supplied, synchronize active status & links
+                if "media_assets" in data and isinstance(data["media_assets"], list):
+                    for idx, ma in enumerate(data["media_assets"]):
+                        if isinstance(ma, dict) and "id" in ma:
+                            mid = ma["id"]
+                            is_act = 1 if ma.get("is_active", True) else 0
+                            cursor.execute("SELECT id FROM template_media_assets WHERE template_id = ? AND media_asset_id = ?", (template_id, mid))
+                            existing_link = cursor.fetchone()
+                            if existing_link:
+                                cursor.execute("""
+                                    UPDATE template_media_assets
+                                    SET is_active = ?, sort_order = ?
+                                    WHERE id = ?
+                                """, (is_act, idx, existing_link["id"]))
+                            else:
+                                cursor.execute("""
+                                    INSERT INTO template_media_assets (template_id, media_asset_id, is_active, sort_order, created_at)
+                                    VALUES (?, ?, ?, ?, ?)
+                                """, (template_id, mid, is_act, idx, now))
+
+                # 4. Excluded contacts: if supplied, synchronize template_contacts
+                if "excluded_contact_ids" in data and isinstance(data["excluded_contact_ids"], list):
+                    cursor.execute("DELETE FROM template_contacts WHERE template_id = ?", (template_id,))
+                    for cid in data["excluded_contact_ids"]:
+                        cursor.execute("""
+                            INSERT INTO template_contacts (template_id, contact_id, is_excluded, created_at)
+                            VALUES (?, ?, 1, ?)
+                        """, (template_id, cid, now))
+
+                conn.commit()
+                return self.get_template(template_id)
+
+    def rename_media_asset(self, asset_id: int, new_title: str) -> bool:
+        """Renames a media asset's display title."""
+        with _lock:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("UPDATE media_assets SET title = ? WHERE id = ?", (new_title.strip(), asset_id))
+                conn.commit()
+                return cursor.rowcount > 0
 
     def add_template_text_variation(self, template_id: int, content: str) -> int:
         with _lock:
@@ -1922,8 +2054,8 @@ class DatabaseManager:
                         INSERT OR IGNORE INTO campaign_queue_items (
                             campaign_id, job_id, idempotency_key, recipient_name, recipient_phone,
                             variant_id, variant_purpose, resolved_message, media_path, media_asset_id,
-                            allocation_rule, status, retry_count, max_retries, error_message, created_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            allocation_rule, status, retry_count, max_retries, error_message, message_format, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         campaign_id,
                         job_id,
@@ -1940,6 +2072,7 @@ class DatabaseManager:
                         0,
                         item.get("max_retries", 3),
                         item.get("error_message", ""),
+                        item.get("message_format", "image_with_caption"),
                         now
                     ))
                     if cursor.rowcount > 0:
@@ -1950,6 +2083,180 @@ class DatabaseManager:
     def bulk_enqueue_items(self, campaign_id: Any, job_id: str, items: List[Dict[str, Any]]) -> int:
         cid = None if isinstance(campaign_id, str) else campaign_id
         return self.create_queue_items(job_id=job_id, campaign_id=cid, items=items)
+
+    def get_recipient_activity_items(
+        self,
+        status: Optional[str] = None,
+        search: Optional[str] = None,
+        job_id: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieves recipient-level history records with media thumbnail info,
+        exact rendered text, honest delivery semantics, and timestamps.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            query = """
+                SELECT q.*,
+                       m.title as media_title, m.filename as media_filename, m.mime_type as media_mime_type, m.file_size as media_file_size,
+                       j.campaign_name as job_campaign_name, j.started_at as job_started_at
+                FROM campaign_queue_items q
+                LEFT JOIN media_assets m ON q.media_asset_id = m.id
+                LEFT JOIN jobs j ON q.job_id = j.id
+                WHERE 1=1
+            """
+            params = []
+            if job_id:
+                query += " AND q.job_id = ?"
+                params.append(job_id)
+            if status and status.upper() != "ALL":
+                st_up = status.upper()
+                if st_up == "SENT":
+                    query += " AND q.status IN ('SENT', 'DISPATCHED')"
+                elif st_up == "FAILED":
+                    query += " AND q.status IN ('FAILED', 'FAILED_PERMANENT', 'FAILED_MAX_RETRIES')"
+                elif st_up == "UNCERTAIN":
+                    query += " AND q.status = 'UNCERTAIN'"
+                elif st_up == "PENDING":
+                    query += " AND q.status IN ('PENDING', 'RETRYING', 'SCHEDULED')"
+                else:
+                    query += " AND q.status = ?"
+                    params.append(status)
+            if search:
+                query += " AND (q.recipient_name LIKE ? OR q.recipient_phone LIKE ? OR q.resolved_message LIKE ?)"
+                params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
+            query += " ORDER BY q.id DESC LIMIT ? OFFSET ?"
+            params.extend([limit, offset])
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            items = []
+            for r in rows:
+                d = dict(r)
+                st = (d.get("status") or "PENDING").upper()
+                if st in ("DISPATCHED", "SENT"):
+                    d["display_status"] = "SENT"
+                    d["delivery_label"] = "Sent (Delivered)"
+                    d["delivery_explanation"] = "Message and media successfully submitted to WhatsApp Web and outgoing chat opened."
+                    d["read_label"] = "Read not confirmed"
+                    d["read_explanation"] = "WhatsApp Web does not broadcast read receipts for external broadcast messages without webhooks."
+                elif st == "UNCERTAIN":
+                    d["display_status"] = "UNCERTAIN"
+                    d["delivery_label"] = "Uncertain Delivery"
+                    d["delivery_explanation"] = "Browser timeout or network hiccup during send. Relay prevented duplicate re-send. Verify manually in WhatsApp."
+                    d["read_label"] = "Unconfirmed"
+                    d["read_explanation"] = "Message transmission outcome could not be verified by browser DOM."
+                elif "FAIL" in st:
+                    d["display_status"] = "FAILED"
+                    d["delivery_label"] = "Failed"
+                    d["delivery_explanation"] = d.get("error_message") or "Message delivery encountered an error."
+                    d["read_label"] = "Not delivered"
+                    d["read_explanation"] = "Message was not sent."
+                elif st == "SUPPRESSED":
+                    d["display_status"] = "SUPPRESSED"
+                    d["delivery_label"] = "Suppressed"
+                    d["delivery_explanation"] = "Contact is on suppression or opt-out list."
+                    d["read_label"] = "Not sent"
+                    d["read_explanation"] = "Safety suppression."
+                else:
+                    d["display_status"] = "PENDING"
+                    d["delivery_label"] = "Pending in Queue"
+                    d["delivery_explanation"] = "Waiting for dispatch worker turn."
+                    d["read_label"] = "Pending"
+                    d["read_explanation"] = "Not sent yet."
+
+                if d.get("media_filename"):
+                    d["media_thumbnail_url"] = f"/api/media/file/{d['media_filename']}"
+                else:
+                    d["media_thumbnail_url"] = None
+
+                # Convenience aliases for frontend and consumers
+                d["contact_name"] = d.get("recipient_name") or "Recipient"
+                d["phone"] = d.get("recipient_phone") or ""
+                d["message"] = d.get("resolved_message") or ""
+                d["raw_status"] = st
+                d["status"] = d["display_status"]
+                d["campaign_name"] = d.get("job_campaign_name") or ""
+
+                items.append(d)
+            return items
+
+    def get_recipient_activity_detail(self, item_id: int) -> Optional[Dict[str, Any]]:
+        """Retrieves full detail for a single recipient queue item including contact metadata and audit trace."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT q.*,
+                       m.title as media_title, m.filename as media_filename, m.mime_type as media_mime_type, m.file_size as media_file_size,
+                       j.campaign_name as job_campaign_name, j.started_at as job_started_at,
+                       c.group_name as contact_group, c.consent_status as contact_consent
+                FROM campaign_queue_items q
+                LEFT JOIN media_assets m ON q.media_asset_id = m.id
+                LEFT JOIN jobs j ON q.job_id = j.id
+                LEFT JOIN contacts c ON q.recipient_phone = c.phone
+                WHERE q.id = ?
+            """, (item_id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            d = dict(row)
+            st = (d.get("status") or "PENDING").upper()
+            if st in ("DISPATCHED", "SENT"):
+                d["display_status"] = "SENT"
+                d["delivery_label"] = "Sent (Delivered)"
+                d["delivery_explanation"] = "Message successfully submitted to WhatsApp Web."
+                d["read_label"] = "Read not confirmed"
+                d["read_explanation"] = "WhatsApp Web does not broadcast read receipts for external broadcast messages."
+            elif st == "UNCERTAIN":
+                d["display_status"] = "UNCERTAIN"
+                d["delivery_label"] = "Uncertain Delivery"
+                d["delivery_explanation"] = "Browser timeout or network hiccup during send. Relay prevented duplicate re-send."
+                d["read_label"] = "Unconfirmed"
+                d["read_explanation"] = "Transmission outcome unconfirmed by DOM."
+            elif "FAIL" in st:
+                d["display_status"] = "FAILED"
+                d["delivery_label"] = "Failed"
+                d["delivery_explanation"] = d.get("error_message") or "Message delivery encountered an error."
+                d["read_label"] = "Not delivered"
+                d["read_explanation"] = "Message was not sent."
+            else:
+                d["display_status"] = "PENDING"
+                d["delivery_label"] = "Pending in Queue"
+                d["delivery_explanation"] = "Waiting for dispatch worker turn."
+                d["read_label"] = "Pending"
+                d["read_explanation"] = "Not sent yet."
+
+            if d.get("media_filename"):
+                d["media_thumbnail_url"] = f"/api/media/file/{d['media_filename']}"
+            else:
+                d["media_thumbnail_url"] = None
+
+            # Convenience aliases
+            d["contact_name"] = d.get("recipient_name") or "Recipient"
+            d["phone"] = d.get("recipient_phone") or ""
+            d["message"] = d.get("resolved_message") or ""
+            d["raw_status"] = st
+            d["status"] = d["display_status"]
+            d["campaign_name"] = d.get("job_campaign_name") or ""
+            d["group_name"] = d.get("contact_group") or "General"
+
+            return d
+
+    def reset_queue_item_for_retry(self, item_id: int) -> Optional[Dict[str, Any]]:
+        """Resets a single queue item to PENDING for individual recipient retry."""
+        with _lock:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE campaign_queue_items
+                    SET status = 'PENDING', error_message = '', retry_count = 0
+                    WHERE id = ?
+                """, (item_id,))
+                conn.commit()
+                if cursor.rowcount > 0:
+                    return self.get_recipient_activity_detail(item_id)
+                return None
 
     def get_queue_items(self, job_id: str, status: Optional[str] = None, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
         with self.get_connection() as conn:

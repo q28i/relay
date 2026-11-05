@@ -12,6 +12,7 @@ from backend.database import db
 from backend.models import (
     TemplateCreate,
     TemplateUpdate,
+    TemplateSaveRequest,
     MessageVariantCreate,
     MessageVariantUpdate,
     PreviewResolveRequest,
@@ -133,7 +134,8 @@ def create_template(payload: TemplateCreate):
             variables=variables,
             description=payload.description or "",
             content_selection_mode=payload.content_selection_mode or "mix_variations",
-            target_group=payload.target_group or "All"
+            target_group=payload.target_group or "All",
+            message_format=payload.message_format or "image_with_caption"
         )
         db.log_event("INFO", "Templates", f"Created template '{payload.name}' (Variables: {variables})")
         return db.get_template(tid)
@@ -152,6 +154,7 @@ def update_template(template_id: int, payload: TemplateUpdate):
         variables=variables,
         description=payload.description,
         content_selection_mode=payload.content_selection_mode,
+        message_format=payload.message_format,
         target_group=payload.target_group,
         pacing_delay_min=payload.pacing_delay_min,
         pacing_delay_max=payload.pacing_delay_max
@@ -441,6 +444,7 @@ class LaunchTemplateCampaignRequest(BaseModel):
     target_group: Optional[str] = "All"
     pacing_delay_min: Optional[int] = 8
     pacing_delay_max: Optional[int] = 16
+    message_format: Optional[str] = "image_with_caption"
 
 
 @router.post("/{template_id}/duplicate")
@@ -629,6 +633,7 @@ def launch_template_campaign(template_id: int, payload: LaunchTemplateCampaignRe
 
     target_grp = payload.target_group or tpl.get("target_group", "All")
     camp_name = payload.campaign_name or f"{tpl['name']} ({datetime.now().strftime('%b %d, %H:%M')})"
+    msg_format = payload.message_format or tpl.get("message_format") or "image_with_caption"
 
     contacts = db.get_contacts(group_name=target_grp if target_grp != "All" else None, limit=5000)
     eligible_contacts = [c for c in contacts if c.get("consent_status") != "opted_out"]
@@ -641,6 +646,7 @@ def launch_template_campaign(template_id: int, payload: LaunchTemplateCampaignRe
         min_delay=float(payload.pacing_delay_min or tpl.get("pacing_delay_min", 8)),
         max_delay=float(payload.pacing_delay_max or tpl.get("pacing_delay_max", 16)),
         allocation_method=tpl.get("content_selection_mode", "mix_variations"),
+        message_format=msg_format,
         template_id=template_id
     )
 
@@ -649,6 +655,25 @@ def launch_template_campaign(template_id: int, payload: LaunchTemplateCampaignRe
         "campaign_name": camp_name,
         "job": res,
         "eligible_count": len(eligible_contacts),
-        "mode": tpl.get("content_selection_mode", "mix_variations")
+        "mode": tpl.get("content_selection_mode", "mix_variations"),
+        "message_format": msg_format
     }
+
+
+@router.post("/{template_id}/save")
+def save_complete_template(template_id: int, payload: TemplateSaveRequest):
+    """
+    Atomically saves complete template configuration:
+    name, description, mode, message_format, audience, variations, media, excluded contacts.
+    """
+    tpl = db.get_template(template_id)
+    if not tpl:
+        raise HTTPException(status_code=404, detail="Template not found")
+    try:
+        updated = db.save_complete_template(template_id, payload.dict(exclude_unset=True))
+        db.log_event("INFO", "Templates", f"Saved full configuration for template #{template_id} '{updated.get('name')}'")
+        return {"success": True, "template": updated}
+    except Exception as e:
+        logger.error(f"Failed to save template #{template_id}: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to save template: {e}")
 

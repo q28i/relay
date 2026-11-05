@@ -32,6 +32,74 @@ def get_active_job():
     return {"active_job": job}
 
 
+@router.get("/activity/items")
+def get_activity_items(
+    status: Optional[str] = Query(None, description="Filter by status: ALL, SENT, FAILED, UNCERTAIN, PENDING"),
+    search: Optional[str] = Query(None, description="Search by recipient name, phone, or message text"),
+    job_id: Optional[str] = Query(None, description="Filter by specific job ID"),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0)
+):
+    """
+    Returns recipient-level messaging activity with exact message text,
+    media preview thumbnails, status filters, and honest delivery explanations.
+    """
+    items = db.get_recipient_activity_items(status=status, search=search, job_id=job_id, limit=limit, offset=offset)
+    enriched = []
+    for it in items:
+        d = dict(it)
+        d["phone_masked"] = mask_phone(d.get("recipient_phone", ""))
+        enriched.append(d)
+    return {"items": enriched, "count": len(enriched)}
+
+
+@router.get("/activity/items/{item_id}")
+def get_activity_item_detail(item_id: int):
+    """Returns detailed recipient drawer metadata for a single dispatch item."""
+    detail = db.get_recipient_activity_detail(item_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Recipient activity record not found")
+    detail["phone_masked"] = mask_phone(detail.get("recipient_phone", ""))
+    return detail
+
+
+@router.post("/activity/items/{item_id}/retry")
+def retry_single_activity_item(item_id: int):
+    """Retries sending to a single failed or uncertain recipient."""
+    item = db.get_recipient_activity_detail(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Recipient activity record not found")
+
+    phone = item.get("recipient_phone", "")
+    if db.is_phone_suppressed(phone):
+        raise HTTPException(status_code=400, detail="Cannot retry: recipient phone is on the suppression/opt-out list")
+
+    # Reset the queue item so status reflects retry in progress
+    db.reset_queue_item_for_retry(item_id)
+
+    single_contact = [{
+        "name": item.get("recipient_name", "Customer"),
+        "phone": phone,
+        "message": item.get("resolved_message", "")
+    }]
+
+    retry_camp_name = f"Retry: {item.get('recipient_name', 'Recipient')}"
+    new_job = job_worker.start_campaign_job(
+        campaign_name=retry_camp_name,
+        contacts=single_contact,
+        template_content=item.get("resolved_message", ""),
+        attachment_path=item.get("media_path") if item.get("media_path") else None,
+        media_asset_id=item.get("media_asset_id"),
+        message_format=item.get("message_format") or "image_with_caption"
+    )
+
+    return {
+        "success": True,
+        "message": f"Retry started for {item.get('recipient_name')} ({mask_phone(phone)})",
+        "new_job_id": new_job["id"]
+    }
+
+
 @router.get("/{job_id}")
 def get_job_details(job_id: str):
     """Retrieves full details and contact-level delivery logs for a job."""

@@ -30,7 +30,7 @@ class MessagingProvider(ABC):
         pass
 
     @abstractmethod
-    def send_message(self, phone: str, message: str, attachment_path: Optional[str] = None) -> Dict[str, Any]:
+    def send_message(self, phone: str, message: str, attachment_path: Optional[str] = None, message_format: str = "image_with_caption", **kwargs) -> Dict[str, Any]:
         """Dispatches a single message."""
         pass
 
@@ -122,9 +122,9 @@ class WhatsAppWebAdapter(MessagingProvider):
         except Exception as e:
             return {"active": False, "logged_in": False, "status_text": f"Error: {e}"}
 
-    def send_message(self, phone: str, message: str, attachment_path: Optional[str] = None) -> Dict[str, Any]:
+    def send_message(self, phone: str, message: str, attachment_path: Optional[str] = None, message_format: str = "image_with_caption", **kwargs) -> Dict[str, Any]:
         self._ensure_engine()
-        return self._engine.send_message(phone=phone, message=message, attachment_path=attachment_path)
+        return self._engine.send_message(phone=phone, message=message, attachment_path=attachment_path, message_format=message_format)
 
     def send_batch(
         self,
@@ -205,7 +205,7 @@ class MockMessagingProvider(MessagingProvider):
             "current_url": "https://web.whatsapp.com/mock"
         }
 
-    def send_message(self, phone: str, message: str, attachment_path: Optional[str] = None) -> Dict[str, Any]:
+    def send_message(self, phone: str, message: str, attachment_path: Optional[str] = None, message_format: str = "image_with_caption", **kwargs) -> Dict[str, Any]:
         if self.simulation_delay > 0:
             time.sleep(self.simulation_delay)
         if attachment_path:
@@ -231,7 +231,9 @@ class MockMessagingProvider(MessagingProvider):
         return {
             "status": "SENT",
             "media_sent": bool(attachment_path),
-            "caption_sent": bool(attachment_path and message),
+            "caption_sent": bool(attachment_path and message and message_format == "image_with_caption"),
+            "text_sent": bool(message and (not attachment_path or message_format == "image_then_text")),
+            "message_format": message_format,
             "error": None
         }
 

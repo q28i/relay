@@ -141,16 +141,31 @@
       <div id="template-editor-view" style="display: none;">
         <!-- Sticky Editor Top Bar -->
         <div class="template-editor-topbar">
-          <div class="template-editor-left">
+          <div class="template-editor-left" style="display: flex; align-items: center; gap: 0.75rem; flex: 1;">
             <button type="button" class="btn btn-subtle btn-sm" onclick="app.closeTemplateEditor()" title="Return to template list">
               ← All Templates
             </button>
-            <div style="flex: 1; min-width: 180px;">
-              <input type="text" id="tpl-edit-name-input" class="form-input" placeholder="Template Name (e.g. Winter Sale)" style="font-weight: 700; font-size: 1rem; padding: 0.35rem 0.65rem;" onchange="app.saveActiveTemplateMeta()">
+            <div style="flex: 1; max-width: 260px;">
+              <input type="text" id="tpl-edit-name-input" class="form-input" placeholder="Template Name (e.g. Winter Sale)" style="font-weight: 700; font-size: 0.95rem; padding: 0.35rem 0.65rem;" oninput="app.markTemplateDirty()" onchange="app.saveActiveTemplate()">
             </div>
+            <!-- Save Status Badge & Save Button -->
+            <span class="badge badge-success" id="tpl-save-status-badge" style="font-size: 0.75rem; padding: 0.3rem 0.6rem;">Saved</span>
+            <button type="button" class="btn btn-primary btn-sm" id="btn-save-template" onclick="app.saveActiveTemplate()" title="Save Template changes (Ctrl+S)" style="display: inline-flex; align-items: center; gap: 0.35rem;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+              Save Template
+            </button>
           </div>
 
-          <div class="template-editor-right">
+          <div class="template-editor-right" style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+            <!-- Message Format Dropdown -->
+            <div style="display: inline-flex; align-items: center; gap: 0.35rem;" title="Choose how media and text are delivered to recipients">
+              <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: 600;">Format:</span>
+              <select id="tpl-message-format-select" class="form-select form-select-sm" style="font-size: 0.78rem; padding: 0.25rem 0.5rem; max-width: 190px;" onchange="app.markTemplateDirty(); app.saveActiveTemplate()">
+                <option value="image_with_caption">Image with caption (Default)</option>
+                <option value="image_then_text">Image then separate text</option>
+              </select>
+            </div>
+
             <!-- Mode Toggle Switcher -->
             <div class="mode-pill-group" role="group" aria-label="Content Selection Mode">
               <button type="button" class="mode-pill-btn active" id="btn-mode-mix" onclick="app.setActiveTemplateMode('mix_variations')" title="1 media + 1 text assigned per recipient using reproducible RNG">
@@ -643,6 +658,10 @@
           </div>
 
           <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+            <label style="display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8125rem; font-weight: 500; cursor: pointer; user-select: none;">
+              <input type="checkbox" id="chk-master-medialib" onchange="app.toggleSelectAllMediaLibrary(this.checked)" style="cursor: pointer; accent-color: var(--primary);">
+              <span>Select All</span>
+            </label>
             <div class="segmented-control" role="group" aria-label="Media Filter">
               <button type="button" class="segmented-filter-btn active" id="medialib-flt-all" onclick="app.filterMediaLibrary('all')">All</button>
               <button type="button" class="segmented-filter-btn" id="medialib-flt-image" onclick="app.filterMediaLibrary('image')">Images</button>
@@ -808,6 +827,90 @@
           </div>
         </div>
       </div>
+
+      <!-- 3. RECIPIENT-LEVEL MESSAGING HISTORY VIEW -->
+      <div class="card" id="recipient-activity-card" style="margin-top: 1.5rem;">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; padding: 0.85rem 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
+          <div>
+            <h2 class="card-title" style="margin: 0; font-size: 1.05rem;">Recipient Messaging Activity</h2>
+            <div class="card-subtitle" style="font-size: 0.78rem; color: var(--text-muted);">
+              Granular recipient delivery status, exact rendered message copy, attachments, and retry controls
+            </div>
+          </div>
+          <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+            <div class="segmented-control" role="group" aria-label="Status Filter">
+              <button type="button" class="segmented-filter-btn active" id="act-flt-all" onclick="app.filterRecipientActivity('ALL')">All</button>
+              <button type="button" class="segmented-filter-btn" id="act-flt-sent" onclick="app.filterRecipientActivity('SENT')">Sent</button>
+              <button type="button" class="segmented-filter-btn" id="act-flt-failed" onclick="app.filterRecipientActivity('FAILED')">Failed</button>
+              <button type="button" class="segmented-filter-btn" id="act-flt-uncertain" onclick="app.filterRecipientActivity('UNCERTAIN')">Uncertain</button>
+              <button type="button" class="segmented-filter-btn" id="act-flt-pending" onclick="app.filterRecipientActivity('PENDING')">Pending</button>
+            </div>
+            <input type="text" class="form-input" id="act-search-input" placeholder="Search recipient or message..." style="max-width: 200px; font-size: 0.78rem; padding: 0.25rem 0.5rem;" oninput="app.searchRecipientActivity(this.value)">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="app.loadRecipientActivity()">Refresh</button>
+          </div>
+        </div>
+
+        <div class="card-body" style="padding: 0;">
+          <div style="max-height: 480px; overflow-y: auto;">
+            <table class="data-table" style="width: 100%; margin: 0; font-size: 0.8125rem;">
+              <thead>
+                <tr>
+                  <th>Recipient</th>
+                  <th>Message (Assigned Copy)</th>
+                  <th>Media Attachment</th>
+                  <th>Delivery Status</th>
+                  <th>Timestamp</th>
+                  <th style="text-align: right;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="recipient-activity-tbody">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+          <div id="recipient-activity-empty" style="display: none; padding: 2.5rem 1.5rem; text-align: center; color: var(--text-muted); font-size: 0.85rem;">
+            No recipient messaging records found matching the current filter.
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. EXPANDABLE TECHNICAL AUDIT LOGS -->
+      <details class="audit-logs-details" style="margin-top: 1.5rem; background: var(--surface-subtle); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.75rem 1rem;">
+        <summary style="cursor: pointer; font-weight: 600; font-size: 0.85rem; color: var(--text-secondary); user-select: none; display: flex; justify-content: space-between; align-items: center;" onclick="app.loadTechnicalAuditLogs()">
+          <span>⚙️ View Technical Audit Logs (Engine Telemetry & System Events)</span>
+          <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">Click to expand</span>
+        </summary>
+        <div style="margin-top: 1rem; border-top: 1px solid var(--border-color); padding-top: 0.75rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+              <select class="form-select form-select-sm" id="audit-level-filter" style="max-width: 140px; font-size: 0.78rem;" onchange="app.loadTechnicalAuditLogs()">
+                <option value="ALL">All Levels</option>
+                <option value="INFO">Info</option>
+                <option value="WARNING">Warning</option>
+                <option value="ERROR">Error</option>
+              </select>
+            </div>
+            <a href="/api/logs/export" class="btn btn-secondary btn-sm" download>
+              Export CSV Audit Log
+            </a>
+          </div>
+          <div style="max-height: 320px; overflow-y: auto; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-xs);">
+            <table class="data-table" style="width: 100%; margin: 0; font-size: 0.75rem; font-family: var(--font-mono);">
+              <thead>
+                <tr>
+                  <th style="width: 150px;">Timestamp</th>
+                  <th style="width: 80px;">Level</th>
+                  <th style="width: 120px;">Module</th>
+                  <th>Message</th>
+                </tr>
+              </thead>
+              <tbody id="technical-audit-tbody">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </details>
     </section>
 
     <!-- SECTION COMPATIBILITY ALIASES (HIDDEN) -->
@@ -2419,6 +2522,110 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-media-preview')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal / Drawer: Recipient Activity Details -->
+  <div class="modal-backdrop" id="modal-recipient-drawer">
+    <div class="modal-card" style="max-width: 680px;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title" id="rec-drawer-title">Recipient Activity Details</h3>
+          <div style="font-size: 0.75rem; color: var(--text-muted);" id="rec-drawer-subtitle">—</div>
+        </div>
+        <button class="modal-close" onclick="app.closeModal('modal-recipient-drawer')">&times;</button>
+      </div>
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 1rem;">
+        <!-- Recipient & Delivery Header Card -->
+        <div style="background: var(--surface-subtle); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.85rem 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+            <div>
+              <strong style="font-size: 1rem;" id="rec-drawer-name">—</strong>
+              <span style="font-family: var(--font-mono); font-size: 0.85rem; color: var(--text-muted); margin-left: 0.5rem;" id="rec-drawer-phone">—</span>
+            </div>
+            <span class="badge" id="rec-drawer-status-badge">—</span>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; font-size: 0.78rem;">
+            <div>Group: <span id="rec-drawer-group" style="font-weight: 600;">—</span></div>
+            <div>Format: <span id="rec-drawer-format" style="font-weight: 600;">—</span></div>
+            <div>Dispatched: <span id="rec-drawer-dispatched" style="font-weight: 600;">—</span></div>
+            <div>Campaign: <span id="rec-drawer-campaign" style="font-weight: 600;">—</span></div>
+          </div>
+        </div>
+
+        <!-- Honest Delivery & Read Semantics Box -->
+        <div style="border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.85rem 1rem; background: var(--bg-surface);">
+          <div style="font-size: 0.8125rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.35rem;">
+            Honest Delivery Semantics
+          </div>
+          <div style="font-size: 0.78rem; line-height: 1.45; color: var(--text-secondary);" id="rec-drawer-delivery-explanation">
+            —
+          </div>
+          <div style="margin-top: 0.5rem; font-size: 0.75rem; color: var(--text-muted); border-top: 1px dashed var(--border-color); padding-top: 0.35rem;" id="rec-drawer-read-explanation">
+            —
+          </div>
+        </div>
+
+        <!-- Error Reason (if failed or uncertain) -->
+        <div id="rec-drawer-error-box" style="display: none; padding: 0.75rem 1rem; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--radius-sm); color: #ef4444; font-size: 0.8125rem;">
+          <div style="font-weight: 700; margin-bottom: 0.25rem;">Dispatch Error Details:</div>
+          <div id="rec-drawer-error-text">—</div>
+        </div>
+
+        <!-- Assigned Message Copy -->
+        <div>
+          <div style="font-size: 0.8125rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.35rem;">
+            Assigned Message Text
+          </div>
+          <div style="padding: 0.75rem 1rem; background: var(--surface-subtle); border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-size: 0.85rem; white-space: pre-wrap; max-height: 140px; overflow-y: auto;" id="rec-drawer-message-text">
+            —
+          </div>
+        </div>
+
+        <!-- Media Attachment Preview (if any) -->
+        <div id="rec-drawer-media-section" style="display: none;">
+          <div style="font-size: 0.8125rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.35rem;">
+            Assigned Media Asset
+          </div>
+          <div style="display: flex; gap: 0.75rem; align-items: center; padding: 0.5rem 0.75rem; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-surface);">
+            <div id="rec-drawer-media-thumb" style="width: 50px; height: 50px; border-radius: var(--radius-xs); overflow: hidden; background: var(--surface-subtle); display: flex; align-items: center; justify-content: center;">
+              <!-- img or icon -->
+            </div>
+            <div style="flex: 1; font-size: 0.78rem;">
+              <strong id="rec-drawer-media-title" style="display: block;">—</strong>
+              <span id="rec-drawer-media-meta" style="color: var(--text-muted);">—</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <button type="button" class="btn btn-warning btn-sm" id="btn-rec-retry" onclick="app.retryActiveDrawerRecipient()" style="display: none;">
+            🔄 Retry Sending to This Recipient
+          </button>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-recipient-drawer')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Rename Media Asset -->
+  <div class="modal-backdrop" id="modal-rename-media">
+    <div class="modal-card" style="max-width: 440px;">
+      <div class="modal-header">
+        <h3 class="modal-title">Rename Media Asset</h3>
+        <button class="modal-close" onclick="app.closeModal('modal-rename-media')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Asset Title / Name</label>
+          <input type="text" class="form-input" id="rename-media-input" placeholder="e.g. Summer Promo Banner">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-rename-media')">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm" onclick="app.submitRenameMedia()">Save Title</button>
       </div>
     </div>
   </div>

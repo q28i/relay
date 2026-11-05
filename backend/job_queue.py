@@ -121,7 +121,8 @@ class BackgroundJobWorker:
         media_set_id: Optional[int] = None,
         job_id: Optional[str] = None,
         scheduled_at: Optional[str] = None,
-        provider: Optional[MessagingProvider] = None
+        provider: Optional[MessagingProvider] = None,
+        message_format: str = "image_with_caption"
     ) -> Dict[str, Any]:
         """
         Stages recipients into durable queue items with SHA-256 idempotency keys,
@@ -195,6 +196,7 @@ class BackgroundJobWorker:
             tpl_active_texts = [tv for tv in template.get("text_variations", []) if tv.get("is_active", 1)] if template else []
             tpl_active_media = [ma for ma in template.get("media_assets", []) if ma.get("is_active", 1)] if template else []
             tpl_mode = template.get("content_selection_mode", "mix_variations") if template else "mix_variations"
+            chosen_msg_format = message_format or (template.get("message_format") if template else "image_with_caption") or "image_with_caption"
 
             # If explicit alternatives exist beyond the auto-created Primary Variant, use those for rotation / AB testing
             rotation_variants = [v for v in approved_variants if v.get("variant_name") != "Primary Variant"]
@@ -317,7 +319,9 @@ class BackgroundJobWorker:
                 if isinstance(c.get("custom_fields"), dict):
                     all_fields.update(c["custom_fields"])
                 all_fields["name"] = name
+                all_fields["first_name"] = name.split()[0] if name else "Friend"
                 all_fields["phone"] = phone
+                all_fields["group"] = c.get("group_name", "")
                 for k, v in all_fields.items():
                     if isinstance(v, (str, int, float)):
                         rendered = rendered.replace(f"{{{k}}}", str(v))
@@ -358,6 +362,7 @@ class BackgroundJobWorker:
                     "media_path": item_media_path,
                     "media_asset_id": item_media_asset_id,
                     "allocation_rule": allocation_rule,
+                    "message_format": chosen_msg_format,
                     "status": status,
                     "max_retries": max_retries,
                     "error_message": error_msg
@@ -579,11 +584,20 @@ class BackgroundJobWorker:
                         break
 
                     try:
-                        res = provider.send_message(
-                            phone=recipient_phone,
-                            message=resolved_msg,
-                            attachment_path=media_path if media_path else None
-                        )
+                        item_format = item.get("message_format") or "image_with_caption"
+                        try:
+                            res = provider.send_message(
+                                phone=recipient_phone,
+                                message=resolved_msg,
+                                attachment_path=media_path if media_path else None,
+                                message_format=item_format
+                            )
+                        except TypeError:
+                            res = provider.send_message(
+                                phone=recipient_phone,
+                                message=resolved_msg,
+                                attachment_path=media_path if media_path else None
+                            )
                     except Exception as e:
                         res = {"status": "FAILED", "error": str(e)}
 
