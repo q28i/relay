@@ -20,6 +20,10 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
+from logger import get_logger, mask_phone
+
+logger = get_logger("WhatsAppEngine")
+
 
 def process_spintax(text: str) -> str:
     """
@@ -51,22 +55,67 @@ class WhatsAppEngine:
     ]
 
     MESSAGE_INPUT_SELECTORS = [
-        (By.CSS_SELECTOR, "div[contenteditable='true'][data-tab='10']"),
+        (By.CSS_SELECTOR, "footer div[contenteditable='true']"),
+        (By.CSS_SELECTOR, "div[data-testid='conversation-compose-box-input']"),
         (By.CSS_SELECTOR, "div[contenteditable='true'][aria-placeholder='Type a message']"),
+        (By.CSS_SELECTOR, "div[contenteditable='true'][aria-label='Type a message']"),
+        (By.CSS_SELECTOR, "div[contenteditable='true'][data-tab='10']"),
+        (By.CSS_SELECTOR, "div[contenteditable='true'][data-tab='6']"),
+        (By.CSS_SELECTOR, "div#main footer"),
         (By.CSS_SELECTOR, "div[contenteditable='true']"),
     ]
 
     ATTACH_BUTTON_SELECTORS = [
-        (By.CSS_SELECTOR, "span[data-icon='plus']"),
-        (By.CSS_SELECTOR, "span[data-icon='attach-menu-plus']"),
         (By.CSS_SELECTOR, "button[aria-label='Attach']"),
         (By.CSS_SELECTOR, "div[title='Attach']"),
+        (By.CSS_SELECTOR, "div[aria-label='Attach']"),
+        (By.CSS_SELECTOR, "span[data-icon='plus']"),
+        (By.CSS_SELECTOR, "span[data-icon='attach-menu-plus']"),
+        (By.CSS_SELECTOR, "span[data-icon='clip']"),
+        (By.CSS_SELECTOR, "span[data-icon='attach']"),
+        (By.CSS_SELECTOR, "div[data-testid='conversation-clip']"),
+        (By.CSS_SELECTOR, "footer button[aria-label='Attach']"),
+        (By.XPATH, "//div[@id='main']//button[@aria-label='Attach']"),
+        (By.XPATH, "//div[@id='main']//span[@data-icon='plus']/ancestor::button"),
+        (By.XPATH, "//div[@id='main']//span[@data-icon='plus']/ancestor::div[@role='button']"),
     ]
 
     CAPTION_INPUT_SELECTORS = [
-        (By.CSS_SELECTOR, "div[contenteditable='true'][aria-placeholder*='caption']"),
-        (By.CSS_SELECTOR, "div[contenteditable='true'][data-tab='10']"),
-        (By.CSS_SELECTOR, "div[contenteditable='true']"),
+        (By.CSS_SELECTOR, "div[data-testid='media-caption-input-container'] div[contenteditable='true']"),
+        (By.CSS_SELECTOR, "div[contenteditable='true'][aria-placeholder*='caption' i]"),
+        (By.CSS_SELECTOR, "div[contenteditable='true'][aria-placeholder*='Caption' i]"),
+        (By.CSS_SELECTOR, "div[contenteditable='true'][aria-label*='caption' i]"),
+        (By.CSS_SELECTOR, "div[contenteditable='true'][aria-label*='Caption' i]"),
+        (By.CSS_SELECTOR, "div[data-testid='caption-input-box']"),
+        (By.CSS_SELECTOR, "div[data-animate-modal-popup='true'] div[contenteditable='true']"),
+        (By.XPATH, "//div[@role='dialog']//div[@contenteditable='true']"),
+    ]
+
+    PREVIEW_CONTAINER_SELECTORS = [
+        (By.CSS_SELECTOR, "div[data-animate-modal-popup='true']"),
+        (By.CSS_SELECTOR, "div[data-testid='media-caption-input-container']"),
+        (By.CSS_SELECTOR, "div[aria-label='Preview']"),
+        (By.CSS_SELECTOR, "div[aria-label='Media preview']"),
+        (By.CSS_SELECTOR, "div[data-testid='media-editor']"),
+        (By.CSS_SELECTOR, "div[data-testid='image-canvas']"),
+        (By.CSS_SELECTOR, "div[data-testid='media-preview-container']"),
+        (By.XPATH, "//div[@role='dialog']"),
+    ]
+
+    PREVIEW_SEND_BUTTON_SELECTORS = [
+        (By.CSS_SELECTOR, "div[data-animate-modal-popup='true'] span[data-icon='send']"),
+        (By.CSS_SELECTOR, "div[data-animate-modal-popup='true'] span[data-icon='wds-send']"),
+        (By.CSS_SELECTOR, "div[data-animate-modal-popup='true'] div[role='button']"),
+        (By.CSS_SELECTOR, "div[data-testid='media-caption-input-container'] ~ div[role='button']"),
+        (By.CSS_SELECTOR, "div[data-testid='send']"),
+        (By.CSS_SELECTOR, "span[data-icon='send']"),
+        (By.CSS_SELECTOR, "span[data-icon='wds-send']"),
+        (By.CSS_SELECTOR, "button[aria-label='Send']"),
+        (By.CSS_SELECTOR, "div[aria-label='Send']"),
+        (By.XPATH, "//div[@role='dialog']//span[@data-icon='send']"),
+        (By.XPATH, "//div[@role='dialog']//button[@aria-label='Send']"),
+        (By.XPATH, "//div[@role='dialog']//div[@aria-label='Send']"),
+        (By.XPATH, "//span[@data-icon='send']/parent::div[@role='button']"),
     ]
 
     INVALID_POPUP_SELECTORS = [
@@ -94,6 +143,25 @@ class WhatsAppEngine:
 
     def stop(self):
         self._is_stopped = True
+
+    def _interruptible_sleep(self, duration: float, step: float = 0.5) -> bool:
+        """
+        Sleeps for duration seconds in small slices (step s),
+        honoring _is_stopped and _is_paused immediately without hanging.
+        Returns True if completed, False if stopped.
+        """
+        elapsed = 0.0
+        while elapsed < duration:
+            if self._is_stopped:
+                return False
+            while self._is_paused and not self._is_stopped:
+                time.sleep(step)
+            if self._is_stopped:
+                return False
+            chunk = min(step, duration - elapsed)
+            time.sleep(chunk)
+            elapsed += chunk
+        return not self._is_stopped
 
     def ensure_logged_in(self, timeout: int = 90, status_callback: Optional[Callable[[str], None]] = None) -> bool:
         """Navigates to WhatsApp Web and confirms login status."""
@@ -140,11 +208,36 @@ class WhatsAppEngine:
         message: str = "",
         attachment_path: Optional[str] = None,
         wait_timeout: int = 30
-    ) -> Dict[str, str]:
+    ) -> Dict[str, Any]:
         """
         Sends a message and/or media attachment to a phone number.
         Works for text only, media only, or media with text caption.
         """
+        if attachment_path:
+            abs_path = os.path.abspath(attachment_path)
+            if not os.path.isfile(abs_path):
+                return {
+                    "status": "FAILED",
+                    "media_sent": False,
+                    "caption_sent": False,
+                    "error": f"Media failed: file missing on disk: {abs_path}. No text was sent."
+                }
+            try:
+                if os.path.getsize(abs_path) == 0:
+                    return {
+                        "status": "FAILED",
+                        "media_sent": False,
+                        "caption_sent": False,
+                        "error": f"Media failed: file is 0 bytes: {abs_path}. No text was sent."
+                    }
+            except Exception as e:
+                return {
+                    "status": "FAILED",
+                    "media_sent": False,
+                    "caption_sent": False,
+                    "error": f"Media failed: cannot inspect file size: {e}. No text was sent."
+                }
+
         message = process_spintax(message)
         encoded_msg = urllib.parse.quote(message) if not attachment_path else ""
 
@@ -171,7 +264,25 @@ class WhatsAppEngine:
                     pass
 
             # 2. If Media Attachment is specified, attach file
-            if attachment_path and os.path.isfile(attachment_path):
+            if attachment_path:
+                if not os.path.isfile(attachment_path):
+                    return {
+                        "status": "FAILED",
+                        "media_sent": False,
+                        "caption_sent": False,
+                        "error": f"Media file not found: {attachment_path}. No text was sent."
+                    }
+                try:
+                    if os.path.getsize(attachment_path) == 0:
+                        return {
+                            "status": "FAILED",
+                            "media_sent": False,
+                            "caption_sent": False,
+                            "error": f"Media failed: file is 0 bytes: {attachment_path}. No text was sent."
+                        }
+                except Exception:
+                    pass
+
                 # Verify chat input or chat area is loaded
                 chat_loaded = False
                 for by_type, query in self.MESSAGE_INPUT_SELECTORS:
@@ -195,7 +306,7 @@ class WhatsAppEngine:
                             time.sleep(1)
                             send_btn.click()
                             time.sleep(2.5)
-                            return {"status": "SENT", "error": None}
+                            return {"status": "SENT", "media_sent": False, "caption_sent": False, "error": None}
                     except Exception:
                         pass
 
@@ -206,104 +317,248 @@ class WhatsAppEngine:
                             time.sleep(1)
                             inp.send_keys(Keys.ENTER)
                             time.sleep(2.5)
-                            return {"status": "SENT", "error": None}
+                            return {"status": "SENT", "media_sent": False, "caption_sent": False, "error": None}
                     except Exception:
                         pass
 
             time.sleep(1.5)
 
-        return {"status": "FAILED", "error": f"Timed out waiting for chat to initialize"}
+        return {"status": "FAILED", "media_sent": False, "caption_sent": False, "error": "Timed out waiting for chat to initialize"}
 
-    def _send_attachment_flow(self, file_path: str, caption: str = "", timeout: int = 30) -> Dict[str, str]:
-        """Handles attaching images, videos, and documents with captions."""
+    def _send_attachment_flow(self, file_path: str, caption: str = "", timeout: int = 30) -> Dict[str, Any]:
+        """Handles attaching images, videos, and documents with captions honestly."""
         abs_path = os.path.abspath(file_path)
+        if not os.path.isfile(abs_path):
+            return {
+                "status": "FAILED",
+                "media_sent": False,
+                "caption_sent": False,
+                "error": f"Media failed: file missing on disk: {abs_path}. No text was sent."
+            }
+        try:
+            if os.path.getsize(abs_path) == 0:
+                return {
+                    "status": "FAILED",
+                    "media_sent": False,
+                    "caption_sent": False,
+                    "error": f"Media failed: file is 0 bytes: {abs_path}. No text was sent."
+                }
+        except Exception as e:
+            return {
+                "status": "FAILED",
+                "media_sent": False,
+                "caption_sent": False,
+                "error": f"Media failed: cannot inspect file size: {e}. No text was sent."
+            }
+
         ext = os.path.splitext(abs_path)[1].lower()
         is_media = ext in [".png", ".jpg", ".jpeg", ".gif", ".webp", ".mp4", ".mov", ".3gp", ".m4v"]
 
-        # Open attach menu if needed
-        for by_type, query in self.ATTACH_BUTTON_SELECTORS:
-            try:
-                attach_btn = self.driver.find_element(by_type, query)
-                if attach_btn.is_displayed():
-                    attach_btn.click()
-                    time.sleep(1)
-                    break
-            except Exception:
-                pass
-
-        # Locate file inputs
+        # Step 1: Check if file input is already in DOM
         file_inputs = self.driver.find_elements(By.CSS_SELECTOR, "input[type='file']")
-        if not file_inputs:
-            return {"status": "FAILED", "error": "Could not locate attachment file input in DOM"}
 
+        # Step 2: If no file input in DOM, click Attach button to open attach menu
+        if not file_inputs:
+            attach_clicked = False
+            for by_type, query in self.ATTACH_BUTTON_SELECTORS:
+                try:
+                    attach_btns = self.driver.find_elements(by_type, query)
+                    for attach_btn in attach_btns:
+                        if attach_btn.is_displayed():
+                            try:
+                                attach_btn.click()
+                            except Exception:
+                                self.driver.execute_script("arguments[0].click();", attach_btn)
+                            attach_clicked = True
+                            break
+                    if attach_clicked:
+                        break
+                except Exception:
+                    pass
+
+            # Wait up to 4s for file inputs to appear
+            start_wait = time.time()
+            while time.time() - start_wait < 4.0:
+                file_inputs = self.driver.find_elements(By.CSS_SELECTOR, "input[type='file']")
+                if file_inputs:
+                    break
+                time.sleep(0.4)
+
+        if not file_inputs:
+            return {
+                "status": "FAILED",
+                "media_sent": False,
+                "caption_sent": False,
+                "error": "Media failed: could not locate attachment file input in WhatsApp Web DOM. No text was sent."
+            }
+
+        # Step 3: Route file to proper upload control (image/video vs document)
         target_input = None
         if is_media:
             for inp in file_inputs:
-                acc = inp.get_attribute("accept") or ""
+                acc = (inp.get_attribute("accept") or "").lower()
                 if "image" in acc or "video" in acc:
                     target_input = inp
                     break
         else:
             for inp in file_inputs:
-                acc = inp.get_attribute("accept") or ""
-                if "*" in acc or "document" in acc or not acc:
+                acc = (inp.get_attribute("accept") or "").lower().strip()
+                if acc == "*" or "document" in acc or "pdf" in acc or "application" in acc:
                     target_input = inp
                     break
+            if not target_input:
+                for inp in file_inputs:
+                    acc = (inp.get_attribute("accept") or "").lower()
+                    if "image" not in acc and "video" not in acc:
+                        target_input = inp
+                        break
 
         if not target_input:
             target_input = file_inputs[0]
 
+        # Step 4: Deliver file to input element
         try:
+            try:
+                self.driver.execute_script(
+                    "arguments[0].style.display = 'block'; arguments[0].style.visibility = 'visible'; arguments[0].style.opacity = '1';",
+                    target_input
+                )
+            except Exception:
+                pass
             target_input.send_keys(abs_path)
         except Exception as e:
-            return {"status": "FAILED", "error": f"Failed to deliver file to input element: {e}"}
+            return {
+                "status": "FAILED",
+                "media_sent": False,
+                "caption_sent": False,
+                "error": f"Media failed: unable to deliver file to input element: {e}. No text was sent."
+            }
 
-        # Wait for preview overlay
-        start_t = time.time()
+        # Step 5: Wait for WhatsApp preview overlay to appear
+        start_preview_wait = time.time()
         preview_ready = False
-        while time.time() - start_t < timeout:
-            # Check for caption input or send button in preview overlay
-            for by_type, query in self.SEND_BUTTON_SELECTORS:
+        while time.time() - start_preview_wait < timeout:
+            for by_type, query in self.PREVIEW_CONTAINER_SELECTORS:
                 try:
-                    s_btn = self.driver.find_element(by_type, query)
-                    if s_btn.is_displayed():
+                    elems = self.driver.find_elements(by_type, query)
+                    if any(e.is_displayed() for e in elems):
                         preview_ready = True
                         break
                 except Exception:
                     pass
             if preview_ready:
                 break
-            time.sleep(1)
+            for by_type, query in self.PREVIEW_SEND_BUTTON_SELECTORS:
+                try:
+                    elems = self.driver.find_elements(by_type, query)
+                    if any(e.is_displayed() for e in elems):
+                        preview_ready = True
+                        break
+                except Exception:
+                    pass
+            if preview_ready:
+                break
+            time.sleep(0.6)
 
         if not preview_ready:
-            return {"status": "FAILED", "error": "Attachment preview did not appear"}
+            return {
+                "status": "FAILED",
+                "media_sent": False,
+                "caption_sent": False,
+                "error": "Media failed: attachment preview did not appear within timeout. No text was sent."
+            }
 
-        # Add caption if provided
-        if caption:
+        # Step 6: Handle Caption (if present, attach to media send; never send caption first as text)
+        caption_applied = False
+        if caption and caption.strip():
+            caption_text = caption.strip()
+            time.sleep(0.4)
             for by_type, query in self.CAPTION_INPUT_SELECTORS:
                 try:
-                    c_inp = self.driver.find_element(by_type, query)
-                    if c_inp.is_displayed():
-                        time.sleep(0.5)
-                        c_inp.send_keys(caption)
-                        time.sleep(0.5)
+                    c_inps = self.driver.find_elements(by_type, query)
+                    for c_inp in c_inps:
+                        if c_inp.is_displayed():
+                            try:
+                                c_inp.click()
+                            except Exception:
+                                self.driver.execute_script("arguments[0].click();", c_inp)
+                            time.sleep(0.2)
+                            c_inp.send_keys(caption_text)
+                            caption_applied = True
+                            break
+                    if caption_applied:
                         break
                 except Exception:
                     pass
 
-        # Click send button
-        for by_type, query in self.SEND_BUTTON_SELECTORS:
+        # Step 7: Click preview send button
+        send_clicked = False
+        for by_type, query in self.PREVIEW_SEND_BUTTON_SELECTORS:
             try:
-                send_btn = self.driver.find_element(by_type, query)
-                if send_btn.is_displayed():
-                    time.sleep(1)
-                    send_btn.click()
-                    time.sleep(4.0)  # Generous buffer for upload completion
-                    return {"status": "SENT", "error": None}
+                btns = self.driver.find_elements(by_type, query)
+                for btn in btns:
+                    if btn.is_displayed():
+                        time.sleep(0.5)
+                        try:
+                            btn.click()
+                        except Exception:
+                            self.driver.execute_script("arguments[0].click();", btn)
+                        send_clicked = True
+                        break
+                if send_clicked:
+                    break
             except Exception:
                 pass
 
-        return {"status": "FAILED", "error": "Could not click send on attachment preview"}
+        if not send_clicked:
+            try:
+                active_el = self.driver.switch_to.active_element
+                active_el.send_keys(Keys.ENTER)
+                send_clicked = True
+            except Exception:
+                pass
+
+        if not send_clicked:
+            return {
+                "status": "FAILED",
+                "media_sent": False,
+                "caption_sent": False,
+                "error": "Media failed: could not click send button on attachment preview. No text was sent."
+            }
+
+        # Step 8: Confirm sent media by waiting for preview overlay to dismiss
+        wait_dismiss = time.time()
+        confirmed_sent = False
+        while time.time() - wait_dismiss < 10.0:
+            overlay_still_visible = False
+            for by_type, query in self.PREVIEW_CONTAINER_SELECTORS:
+                try:
+                    elems = self.driver.find_elements(by_type, query)
+                    if any(e.is_displayed() for e in elems):
+                        overlay_still_visible = True
+                        break
+                except Exception:
+                    pass
+
+            if not overlay_still_visible:
+                confirmed_sent = True
+                break
+            time.sleep(0.5)
+
+        if confirmed_sent:
+            return {
+                "status": "SENT",
+                "media_sent": True,
+                "caption_sent": bool(caption_applied),
+                "error": None
+            }
+        else:
+            return {
+                "status": "FAILED",
+                "media_sent": False,
+                "caption_sent": False,
+                "error": "Media failed: attachment send was clicked, but WhatsApp preview overlay did not clear within 10s. Media transmission unconfirmed."
+            }
 
     def _dismiss_invalid_popup(self):
         """Clicks OK on invalid number alert."""
@@ -364,7 +619,8 @@ class WhatsAppEngine:
             # Check row-specific attachment, fallback to global attachment
             attach = contact.get("attachment") or global_attachment
 
-            log(f"[{idx}/{total}] Dispatching to {name} (+{phone})...")
+            masked_p = mask_phone(phone)
+            log(f"[{idx}/{total}] Dispatching to {name} (+{masked_p})...")
 
             res = self.send_message(phone=phone, message=msg, attachment_path=attach)
             status = res["status"]
@@ -395,11 +651,15 @@ class WhatsAppEngine:
             if idx < total:
                 if batch_size > 0 and sent_in_batch >= batch_size:
                     log(f"\n[COOLDOWN PAUSE] Sent {sent_in_batch} messages. Pausing for {batch_cooldown_secs}s to maintain account safety...")
-                    time.sleep(batch_cooldown_secs)
+                    if not self._interruptible_sleep(batch_cooldown_secs):
+                        log("[INFO] Cooldown pause cancelled by user stop.")
+                        break
                     sent_in_batch = 0
                 else:
                     delay = random.uniform(min_delay, max_delay)
                     log(f"  Waiting {delay:.1f}s before next contact (randomized jitter)...")
-                    time.sleep(delay)
+                    if not self._interruptible_sleep(delay):
+                        log("[INFO] Delay cancelled by user stop.")
+                        break
 
         return results

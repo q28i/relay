@@ -37,3 +37,4 @@ npx wrangler deploy
 3. Select **Pages** or **Workers**, and choose **Connect to Git**.
 4. Select your private GitHub repository: `ainttyug/whatsapp-bulk-messenger`.
 5. Cloudflare will automatically build and deploy new updates every time you push to `main`!
+

@@ -17,7 +17,7 @@ const DEFAULT_MANIFEST = {
   ],
   download_url: "https://github.com/ainttyug/whatsapp-bulk-messenger/releases/download/v1.2.0/whatsapp-bulk-messenger-v1.2.0.zip",
   asset_name: "whatsapp-bulk-messenger-v1.2.0.zip",
-  sha256: "45709308e746a1476db841f3e7d56a29be8534c03b879ec36437fe6cf58fe53b"
+  sha256: "45709308e746a14786b9375c5171ab4b07353db6ab49c68c2e23db369daf10a8"
 };
 
 export default {
@@ -77,3 +77,4 @@ export default {
     });
   }
 };
+

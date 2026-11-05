@@ -41,3 +41,4 @@ echo and paste it into update_config.json as "custom_endpoint".
 echo ============================================================
 echo.
 pause
+

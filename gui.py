@@ -22,6 +22,11 @@ from whatsapp_engine import WhatsAppEngine, process_spintax
 from excel_editor import ExcelEditorDialog
 from device_manager import DeviceManager
 from updater import Updater
+from config_manager import ConfigManager, AppConfig, BUILTIN_PRESETS
+from validator import PreFlightValidator, DryRunEngine
+from logger import get_logger, mask_phone
+
+logger = get_logger("GUI")
 
 CONFIG_FILE = "config.json"
 
@@ -186,7 +191,8 @@ class WhatsAppGUI(tk.Tk):
         c_row1.pack(fill="x", pady=2)
         ttk.Button(c_row1, text="📂 Select Excel / CSV File...", command=self._browse_contacts_file).pack(side="left", padx=(0, 6))
         ttk.Button(c_row1, text="📊 Open Built-in Excel Editor (Add/Edit Contacts)", style="Action.TButton", command=self.open_excel_editor).pack(side="left", padx=(0, 6))
-        ttk.Button(c_row1, text="📄 View Template", style="Small.TButton", command=self._open_sample_template).pack(side="left")
+        ttk.Button(c_row1, text="📄 View Template", style="Small.TButton", command=self._open_sample_template).pack(side="left", padx=(0, 6))
+        ttk.Button(c_row1, text="🔍 Audit & Preview", style="Small.TButton", command=self._show_audit_dialog).pack(side="left")
 
         self.simple_file_status = ttk.Label(card_contacts, text="No file selected. Click 'Select File' or 'Open Built-in Excel Editor' to start.", font=("Segoe UI", 9, "bold"), foreground="#555")
         self.simple_file_status.pack(anchor="w", pady=(6, 0))
@@ -250,6 +256,80 @@ class WhatsAppGUI(tk.Tk):
         self.simple_media_status.config(text="No attachment selected (Text message only).", foreground="#666")
         self.simple_btn_remove_media.config(state="disabled")
 
+    def _get_current_app_config(self) -> AppConfig:
+        return AppConfig(
+            browser=self.browser_var.get(),
+            profile_index=self.profile_combo.current() if hasattr(self, "profile_combo") else 0,
+            data_file=self.file_path_var.get(),
+            default_country_code=self.cc_var.get(),
+            default_message=self._get_active_message(),
+            min_delay=self.min_delay_var.get(),
+            max_delay=self.max_delay_var.get(),
+            batch_size=self.batch_size_var.get(),
+            batch_pause=self.batch_pause_var.get(),
+            daily_cap=self.daily_cap_var.get(),
+            attach_enabled=self.attach_enabled_var.get(),
+            attachment_path=self.attach_path_var.get(),
+            headless=self.headless_var.get(),
+            sched_enabled=self.sched_enabled_var.get(),
+            sched_time=self.sched_time_var.get(),
+            dev_mode=self.dev_mode_var.get()
+        )
+
+    def _show_audit_dialog(self):
+        if not self.loaded_contacts:
+            self._reload_contacts_data()
+        if not self.loaded_contacts:
+            messagebox.showinfo("Audit & Preview", "Please select a contacts file first to audit.")
+            return
+
+        app_cfg = self._get_current_app_config()
+        report = PreFlightValidator.audit_contacts(self.loaded_contacts, app_cfg)
+
+        diag = tk.Toplevel(self)
+        diag.title("🔍 Pre-Flight Validation & Campaign Audit")
+        diag.geometry("640x520")
+        diag.transient(self)
+
+        top_f = ttk.Frame(diag, padding="15 10 15 5")
+        top_f.pack(fill="both", expand=True)
+
+        txt = tk.Text(top_f, font=("Consolas", 9), wrap="word")
+        txt.pack(fill="both", expand=True)
+        txt.insert("1.0", report.summary())
+        txt.config(state="disabled")
+
+        b_row = ttk.Frame(diag, padding="15 5 15 10")
+        b_row.pack(fill="x")
+
+        def run_dry():
+            sim = DryRunEngine.simulate_campaign(self.loaded_contacts, app_cfg, sample_size=5)
+            s_win = tk.Toplevel(diag)
+            s_win.title("Dry-Run Simulation Output")
+            s_win.geometry("600x420")
+            s_txt = tk.Text(s_win, font=("Segoe UI", 9), wrap="word")
+            s_txt.pack(fill="both", expand=True, padx=10, pady=10)
+            s_txt.insert("1.0", f"CAMPAIGN SIMULATION (Total Targets: {sim['total_recipients']} | Est: ~{sim['estimated_duration_minutes']:.1f} min)\n\n")
+            for sm in sim["sample_messages"]:
+                s_txt.insert(tk.END, f"[{sm['index']}] {sm['name']} (+{sm['phone_masked']}):\n")
+                s_txt.insert(tk.END, f"    \"{sm['simulated_message']}\"\n")
+                if sm["attachment"]:
+                    s_txt.insert(tk.END, f"    Attachment: {sm['attachment']}\n")
+                s_txt.insert(tk.END, "\n")
+            s_txt.config(state="disabled")
+
+        def do_dedupe():
+            self.loaded_contacts, removed = PreFlightValidator.deduplicate_contacts(self.loaded_contacts)
+            messagebox.showinfo("Deduplicated", f"Removed {removed} duplicate contacts.", parent=diag)
+            diag.destroy()
+            self._reload_contacts_data()
+
+        if report.duplicate_count > 0:
+            ttk.Button(b_row, text=f"🧹 Remove {report.duplicate_count} Duplicates", command=do_dedupe).pack(side="left", padx=5)
+
+        ttk.Button(b_row, text="🧪 Run Dry-Run Preview", style="Action.TButton", command=run_dry).pack(side="left", padx=5)
+        ttk.Button(b_row, text="Close", command=diag.destroy).pack(side="right")
+
     # =========================================================================
     # 2. DEVELOPER VIEW (For Power Users / Advanced Configuration)
     # =========================================================================
@@ -286,6 +366,7 @@ class WhatsAppGUI(tk.Tk):
         ttk.Button(top_bar, text="Browse...", command=self._browse_contacts_file).pack(side="left", padx=2)
         ttk.Button(top_bar, text="📊 Open Excel Editor", style="Action.TButton", command=self.open_excel_editor).pack(side="left", padx=2)
         ttk.Button(top_bar, text="Reload", command=self._reload_contacts_data).pack(side="left", padx=2)
+        ttk.Button(top_bar, text="🔍 Audit & Preview", command=self._show_audit_dialog).pack(side="left", padx=2)
 
         s_bar = ttk.Frame(self.dtab_contacts)
         s_bar.pack(fill="x", pady=4)
@@ -407,27 +488,31 @@ class WhatsAppGUI(tk.Tk):
         ttk.Label(grid, text="max").grid(row=4, column=2, sticky="w")
 
     def _apply_preset_safe(self):
-        self.min_delay_var.set(12.0)
-        self.max_delay_var.set(20.0)
-        self.batch_size_var.set(15)
-        self.batch_pause_var.set(90.0)
-        self.daily_cap_var.set(30)
-        messagebox.showinfo("Safe Preset", "Safe Warm-up preset applied (ideal for new SIMs).")
+        p = BUILTIN_PRESETS["safe"]
+        self.min_delay_var.set(p["min_delay"])
+        self.max_delay_var.set(p["max_delay"])
+        self.batch_size_var.set(p["batch_size"])
+        self.batch_pause_var.set(p["batch_pause"])
+        self.daily_cap_var.set(p["daily_cap"])
+        messagebox.showinfo("Safe Preset", f"{p['name']} applied.\n\n{p['description']}")
 
     def _apply_preset_balanced(self):
-        self.min_delay_var.set(8.0)
-        self.max_delay_var.set(15.0)
-        self.batch_size_var.set(20)
-        self.batch_pause_var.set(60.0)
-        self.daily_cap_var.set(100)
-        messagebox.showinfo("Balanced Preset", "Balanced preset applied (standard recommended).")
+        p = BUILTIN_PRESETS["balanced"]
+        self.min_delay_var.set(p["min_delay"])
+        self.max_delay_var.set(p["max_delay"])
+        self.batch_size_var.set(p["batch_size"])
+        self.batch_pause_var.set(p["batch_pause"])
+        self.daily_cap_var.set(p["daily_cap"])
+        messagebox.showinfo("Balanced Preset", f"{p['name']} applied.\n\n{p['description']}")
 
     def _apply_preset_fast(self):
-        self.min_delay_var.set(4.0)
-        self.max_delay_var.set(8.0)
-        self.batch_size_var.set(30)
-        self.batch_pause_var.set(30.0)
-        self.daily_cap_var.set(200)
+        p = BUILTIN_PRESETS["fast"]
+        self.min_delay_var.set(p["min_delay"])
+        self.max_delay_var.set(p["max_delay"])
+        self.batch_size_var.set(p["batch_size"])
+        self.batch_pause_var.set(p["batch_pause"])
+        self.daily_cap_var.set(p["daily_cap"])
+        messagebox.showinfo("Fast Preset", f"{p['name']} applied.\n\n{p['description']}")
 
     def _build_dev_scheduler_tab(self):
         ttk.Checkbutton(self.dtab_scheduler, text="Enable Daily Recurring Automation", variable=self.sched_enabled_var).pack(anchor="w", pady=5)
@@ -707,9 +792,17 @@ class WhatsAppGUI(tk.Tk):
                 default_country_code=self.cc_var.get().strip()
             )
             self.loaded_contacts = contacts
+            app_cfg = self._get_current_app_config()
+            report = PreFlightValidator.audit_contacts(contacts, app_cfg)
+
+            time_est = f"~{report.estimated_duration_minutes:.1f}m"
+            dupe_note = f" | ⚠️ {report.duplicate_count} dupes" if report.duplicate_count > 0 else ""
 
             # Update Simple status
-            self.simple_file_status.config(text=f"Selected: {os.path.basename(path)} ({len(contacts)} contacts ready to send)", foreground="#128C7E")
+            self.simple_file_status.config(
+                text=f"Selected: {os.path.basename(path)} ({len(contacts)} contacts | Est: {time_est}{dupe_note})",
+                foreground="#128C7E"
+            )
 
             # Update Dev Treeview
             for item in self.dev_tree.get_children():
@@ -718,8 +811,11 @@ class WhatsAppGUI(tk.Tk):
                 att = os.path.basename(c["attachment"]) if c["attachment"] else "-"
                 self.dev_tree.insert("", "end", values=(c["phone"], c["name"], c["message"][:50] + "...", att))
 
-            self.dev_contact_count_lbl.config(text=f"Total Loaded: {len(contacts)} contacts ready to dispatch")
+            self.dev_contact_count_lbl.config(
+                text=f"Total Loaded: {len(contacts)} contacts ready to dispatch (Est: {time_est}{dupe_note})"
+            )
         except Exception as e:
+            logger.error(f"Could not read contacts: {e}")
             messagebox.showerror("File Error", f"Could not read contacts:\n{e}")
 
     def start_dispatch(self):
@@ -734,6 +830,29 @@ class WhatsAppGUI(tk.Tk):
         self._reload_contacts_data()
         if not self.loaded_contacts:
             messagebox.showwarning("No Contacts", "No valid contacts found in the selected file!")
+            return
+
+        # Pre-Flight Validation Audit
+        app_cfg = self._get_current_app_config()
+        report = PreFlightValidator.audit_contacts(self.loaded_contacts, app_cfg)
+
+        if report.duplicate_count > 0:
+            ans = messagebox.askyesnocancel(
+                "Duplicate Contacts Detected",
+                f"Found {report.duplicate_count} duplicate phone number entries in this contact list.\n\n"
+                f"Would you like to automatically deduplicate contacts to avoid sending duplicate messages to the same customer?\n\n"
+                f"• Click 'Yes' to remove duplicates and continue\n"
+                f"• Click 'No' to send original list with duplicates\n"
+                f"• Click 'Cancel' to abort"
+            )
+            if ans is None:
+                return
+            if ans is True:
+                self.loaded_contacts, removed = PreFlightValidator.deduplicate_contacts(self.loaded_contacts)
+                self.status_lbl.config(text=f"Deduplicated: Removed {removed} duplicate contacts.")
+
+        if not report.is_ready_to_send:
+            messagebox.showerror("Pre-Flight Validation Error", report.summary())
             return
 
         self._save_current_config()
@@ -881,102 +1000,54 @@ class WhatsAppGUI(tk.Tk):
             messagebox.showinfo("Report", "No dispatch report generated yet in this session.")
 
     def _save_current_config(self):
-        cfg = {
-            "browser": self.browser_var.get(),
-            "profile_index": self.profile_combo.current() if hasattr(self, "profile_combo") else 0,
-            "data_file": self.file_path_var.get(),
-            "default_country_code": self.cc_var.get(),
-            "default_message": self._get_active_message(),
-            "min_delay": self.min_delay_var.get(),
-            "max_delay": self.max_delay_var.get(),
-            "batch_size": self.batch_size_var.get(),
-            "batch_pause": self.batch_pause_var.get(),
-            "daily_cap": self.daily_cap_var.get(),
-            "attach_enabled": self.attach_enabled_var.get(),
-            "attachment_path": self.attach_path_var.get(),
-            "headless": self.headless_var.get(),
-            "sched_enabled": self.sched_enabled_var.get(),
-            "sched_time": self.sched_time_var.get(),
-            "dev_mode": self.dev_mode_var.get()
-        }
-        try:
-            with open(os.path.join(self.base_dir, CONFIG_FILE), "w", encoding="utf-8") as f:
-                import json
-                json.dump(cfg, f, indent=4)
-        except Exception:
-            pass
+        cfg = self._get_current_app_config()
+        ConfigManager.save(cfg)
 
     def _load_saved_config(self):
-        cfg_path = os.path.join(self.base_dir, CONFIG_FILE)
+        cfg = ConfigManager.load()
         sample_xlsx = os.path.join(self.base_dir, "contacts_sample.xlsx")
 
-        if not os.path.isfile(cfg_path):
-            if os.path.isfile(sample_xlsx):
-                self.file_path_var.set(sample_xlsx)
-                self._reload_contacts_data()
-            return
+        self.dev_mode_var.set(cfg.dev_mode)
+        if cfg.browser in self.installed_browsers:
+            self.browser_var.set(cfg.browser)
+            self._refresh_profiles()
 
-        try:
-            with open(cfg_path, "r", encoding="utf-8") as f:
-                import json
-                cfg = json.load(f)
+        if hasattr(self, "profile_combo") and cfg.profile_index < len(self.current_profiles):
+            self.profile_combo.current(cfg.profile_index)
 
-            if "dev_mode" in cfg:
-                self.dev_mode_var.set(cfg["dev_mode"])
+        target_f = cfg.data_file
+        if target_f and os.path.isfile(target_f):
+            self.file_path_var.set(target_f)
+            self._reload_contacts_data()
+        elif os.path.isfile(sample_xlsx):
+            self.file_path_var.set(sample_xlsx)
+            self._reload_contacts_data()
 
-            if "browser" in cfg and cfg["browser"] in self.installed_browsers:
-                self.browser_var.set(cfg["browser"])
-                self._refresh_profiles()
+        self.cc_var.set(cfg.default_country_code)
 
-            if "profile_index" in cfg and hasattr(self, "profile_combo") and cfg["profile_index"] < len(self.current_profiles):
-                self.profile_combo.current(cfg["profile_index"])
+        if cfg.default_message:
+            self.simple_msg_text.delete("1.0", tk.END)
+            self.simple_msg_text.insert("1.0", cfg.default_message)
+            self.dev_msg_text.delete("1.0", tk.END)
+            self.dev_msg_text.insert("1.0", cfg.default_message)
 
-            target_f = cfg.get("data_file")
-            if target_f and os.path.isfile(target_f):
-                self.file_path_var.set(target_f)
-                self._reload_contacts_data()
-            elif os.path.isfile(sample_xlsx):
-                self.file_path_var.set(sample_xlsx)
-                self._reload_contacts_data()
+        self.min_delay_var.set(cfg.min_delay)
+        self.max_delay_var.set(cfg.max_delay)
+        self.batch_size_var.set(cfg.batch_size)
+        self.batch_pause_var.set(cfg.batch_pause)
+        self.daily_cap_var.set(cfg.daily_cap)
 
-            if "default_country_code" in cfg:
-                self.cc_var.set(cfg["default_country_code"])
+        self.attach_enabled_var.set(cfg.attach_enabled)
+        if cfg.attachment_path and os.path.isfile(cfg.attachment_path):
+            self.attach_path_var.set(cfg.attachment_path)
+            size_mb = os.path.getsize(cfg.attachment_path) / (1024 * 1024)
+            info = f"Attached: {os.path.basename(cfg.attachment_path)} ({size_mb:.2f} MB)"
+            self.simple_media_status.config(text=info, foreground="#0066cc")
+            self.simple_btn_remove_media.config(state="normal")
 
-            if "default_message" in cfg and cfg["default_message"]:
-                self.simple_msg_text.delete("1.0", tk.END)
-                self.simple_msg_text.insert("1.0", cfg["default_message"])
-                self.dev_msg_text.delete("1.0", tk.END)
-                self.dev_msg_text.insert("1.0", cfg["default_message"])
-
-            if "min_delay" in cfg:
-                self.min_delay_var.set(cfg["min_delay"])
-            if "max_delay" in cfg:
-                self.max_delay_var.set(cfg["max_delay"])
-            if "batch_size" in cfg:
-                self.batch_size_var.set(cfg["batch_size"])
-            if "batch_pause" in cfg:
-                self.batch_pause_var.set(cfg["batch_pause"])
-            if "daily_cap" in cfg:
-                self.daily_cap_var.set(cfg["daily_cap"])
-
-            if "attach_enabled" in cfg:
-                self.attach_enabled_var.set(cfg["attach_enabled"])
-            if "attachment_path" in cfg and os.path.isfile(cfg["attachment_path"]):
-                self.attach_path_var.set(cfg["attachment_path"])
-                size_mb = os.path.getsize(cfg["attachment_path"]) / (1024 * 1024)
-                info = f"Attached: {os.path.basename(cfg['attachment_path'])} ({size_mb:.2f} MB)"
-                self.simple_media_status.config(text=info, foreground="#0066cc")
-                self.simple_btn_remove_media.config(state="normal")
-
-            if "headless" in cfg:
-                self.headless_var.set(cfg["headless"])
-            if "sched_enabled" in cfg:
-                self.sched_enabled_var.set(cfg["sched_enabled"])
-            if "sched_time" in cfg:
-                self.sched_time_var.set(cfg["sched_time"])
-
-        except Exception as e:
-            print(f"[INFO] Could not load saved config: {e}")
+        self.headless_var.set(cfg.headless)
+        self.sched_enabled_var.set(cfg.sched_enabled)
+        self.sched_time_var.set(cfg.sched_time)
 
 
 def launch_gui():

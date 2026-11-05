@@ -1,3 +1,12 @@
+# WhatsApp Automation Relay
+
+> **Documentation & Engineering Handoff:**  
+> All documentation, architecture specifications, phase reports, and runbooks are organized inside the **[`docs/`](docs/README.md)** directory.  
+> The comprehensive 11-part handoff suite is located at **[`docs/handoff/`](docs/handoff/README.md)**.  
+> **Launch Web Dashboard:** Double-click [`start_dashboard.bat`](start_dashboard.bat) or execute `python -m uvicorn backend.app:app --host 127.0.0.1 --port 8000`.
+
+---
+
 # WhatsApp Bulk Messenger Pro
 
 [![Release](https://img.shields.io/github/v/release/ainttyug/whatsapp-bulk-messenger?color=green)](https://github.com/ainttyug/whatsapp-bulk-messenger/releases)
@@ -42,7 +51,7 @@ Double-click **`run.bat`**:
 2. Checks and installs required dependencies.
 3. Launches the Desktop application.
 
-### CLI & Headless Dispatch
+### CLI, Headless & Dry-Run Dispatch
 ```bash
 # Display hardware Device ID & licensing role:
 python run.py --device-info
@@ -50,11 +59,20 @@ python run.py --device-info
 # Check for updates from GitHub or Cloudflare:
 python run.py --check-update
 
-# Run automated batch headlessly:
-python run.py --auto --headless
+# Pre-flight audit & validate contacts without opening browser:
+python run.py --validate
+
+# Simulate full campaign with Spintax & timing preview (Dry Run):
+python run.py --dry-run
+
+# Run automated batch headlessly with safety preset:
+python run.py --auto --headless --preset safe --dedupe
 
 # Schedule daily dispatch at 09:30 AM:
 python run.py --schedule 09:30
+
+# Run automated unit & integration test suite:
+pytest
 
 # Package a release for distribution (Whitelisted Developer only):
 python run.py --package-release 1.2.1
@@ -62,14 +80,12 @@ python run.py --package-release 1.2.1
 
 ---
 
-## Cloudflare Edge Update Distribution
+## Architecture & Engineering Documentation
 
-For zero-latency global update distribution, see [`cloudflare/README.md`](cloudflare/README.md):
-- Double-click `cloudflare/deploy.bat` to deploy the edge worker to Cloudflare Workers.
-- Or connect this GitHub repository directly inside your Cloudflare Dashboard under **Compute (Workers) -> Workers & Pages**.
-
----
-
-## Technical Documentation
-
-For complete technical specifications, anti-ban research, architecture diagrams, and selector blueprints, refer to [DOCUMENTATION.md](DOCUMENTATION.md).
+For in-depth technical documentation, specifications, and architecture blueprints:
+- **[PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md)**: Master technical documentation (25 comprehensive sections).
+- **[ARCHITECTURE.md](ARCHITECTURE.md)**: System architecture, component boundaries, and Mermaid diagrams.
+- **[FEATURE_MAP.md](FEATURE_MAP.md)**: Complete feature inventory and execution traceability matrix.
+- **[TECHNICAL_DEBT.md](TECHNICAL_DEBT.md)**: Prioritized technical debt register and defect analysis.
+- **[REFACTORING_PLAN.md](REFACTORING_PLAN.md)**: Step-by-step modernization and refactoring strategy.
+- **[DOCUMENTATION.md](DOCUMENTATION.md)**: Legacy audit notes, anti-ban research, and selector reference.

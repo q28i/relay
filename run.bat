@@ -3,7 +3,7 @@ title WhatsApp Bulk Messenger Pro - 1-Click Runner
 cd /d "%~dp0"
 
 echo ============================================================
-echo          WhatsApp Bulk Messenger Pro - 1-Click Runner
+echo      WhatsApp Bulk Messenger Pro - Web Dashboard v2.0
 echo ============================================================
 echo.
 
@@ -47,13 +47,13 @@ if errorlevel 1 (
 )
 
 :check_dependencies
-echo [INFO] Verifying dependencies (selenium, openpyxl, tksheet)...
-python -c "import selenium, openpyxl, tksheet" >nul 2>&1
+echo [INFO] Verifying packages (fastapi, uvicorn, selenium, openpyxl)...
+python -c "import fastapi, uvicorn, selenium, openpyxl" >nul 2>&1
 if errorlevel 1 goto :install_deps
-goto :launch_app
+goto :launch_menu
 
 :install_deps
-echo [INFO] Installing required packages...
+echo [INFO] Installing required dependencies from requirements.txt...
 python -m pip install -r requirements.txt
 if errorlevel 1 (
     echo.
@@ -63,11 +63,48 @@ if errorlevel 1 (
     exit /b 1
 )
 
-:launch_app
-echo [OK] Launching WhatsApp Bulk Messenger Pro...
-echo.
-python run.py %*
+:launch_menu
+if not "%~1"=="" (
+    :: Arguments supplied directly from command line
+    python web_run.py %*
+    goto :end
+)
 
+echo.
+echo Select interface:
+echo   [1] Modern Web Dashboard (Default - Recommended)
+echo   [2] CLI Dry-Run Simulation
+echo   [3] CLI Pre-Flight Validation
+echo   [4] Legacy Desktop GUI (Tkinter)
+echo.
+
+choice /c 1234 /t 3 /d 1 /m "Auto-launching Web Dashboard in 3 seconds (or choose 1-4)"
+set "choice=%errorlevel%"
+
+if "%choice%"=="4" (
+    echo [INFO] Launching Legacy Desktop GUI...
+    python gui.py
+    goto :end
+)
+
+if "%choice%"=="3" (
+    echo [INFO] Running CLI Pre-Flight Validation...
+    python run.py --validate
+    pause
+    goto :end
+)
+
+if "%choice%"=="2" (
+    echo [INFO] Running CLI Dry-Run simulation...
+    python run.py --dry-run
+    pause
+    goto :end
+)
+
+echo [OK] Launching Modern Web Dashboard...
+python web_run.py
+
+:end
 if errorlevel 1 (
     echo.
     echo [INFO] Application exited with code %ERRORLEVEL%.

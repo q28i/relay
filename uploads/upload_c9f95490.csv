@@ -1,0 +1,5 @@
+Name,Phone,Company,Status
+Alice Smith,+15551234567,Acme Corp,Active
+Bob Jones,+15559876543,Globex Inc,VIP
+Carol Danvers,+15555550199,Stark Ind,Active
+David Miller,,Unknown,Invalid

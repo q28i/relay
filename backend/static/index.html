@@ -1,0 +1,2559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Relay — Local Messaging Dispatcher</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.ico">
+  <!-- Immediate theme bootstrap to avoid flash of incorrect theme -->
+  <script>
+    (function() {
+      try {
+        const stored = localStorage.getItem('theme') || 'system';
+        let effective = stored;
+        if (stored === 'system') {
+          effective = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'void' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', effective === 'void' ? 'void' : 'light');
+      } catch (e) {}
+    })();
+  </script>
+  <!-- Open source dashboard foundation: Tabler (tabler/tabler) - MIT License -->
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <!-- Void Subtle Particle Atmosphere -->
+  <div class="void-atmosphere" aria-hidden="true"></div>
+
+  <!-- Clean App Sidebar -->
+  <aside class="app-sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-symbol">R</div>
+      <div>
+        <div class="brand-text">Relay</div>
+        <div style="font-size: 0.68rem; color: var(--text-muted); line-height: 1;">Local Dispatcher</div>
+      </div>
+    </div>
+
+    <ul class="sidebar-nav">
+      <li>
+        <button class="nav-link active" data-tab="dashboard">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect></svg>
+          Dashboard
+        </button>
+      </li>
+      <li>
+        <button class="nav-link" data-tab="contacts">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+          Contacts
+        </button>
+      </li>
+      <li>
+        <button class="nav-link" data-tab="messages">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+          Messages
+        </button>
+      </li>
+      <li>
+        <button class="nav-link" data-tab="campaigns">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+          Campaigns
+        </button>
+      </li>
+      <li>
+        <button class="nav-link" data-tab="activity">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+          Activity
+        </button>
+      </li>
+      <li>
+        <button class="nav-link" data-tab="settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          Settings
+        </button>
+      </li>
+    </ul>
+
+    <div class="sidebar-footer">
+      <span>Relay v2.0 · Local</span>
+      <span id="ws-indicator" style="font-size: 0.72rem; color: var(--text-muted);">Ready</span>
+    </div>
+  </aside>
+
+  <!-- App Main Content Shell -->
+  <div class="app-main">
+    <!-- Topbar Header -->
+    <header class="app-topbar">
+      <div>
+        <h1 class="page-title" id="page-heading">Dashboard</h1>
+      </div>
+      <div class="topbar-actions">
+        <div class="status-pill" id="topbar-session-pill" title="Messaging Session Status">
+          <span class="status-indicator offline" id="topbar-session-dot"></span>
+          <span id="topbar-session-text">Disconnected</span>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="app.navigate('settings')">
+          Connection
+        </button>
+        <button class="btn btn-primary btn-sm" onclick="app.navigate('campaigns')">
+          New Campaign
+        </button>
+      </div>
+    </header>
+
+    <!-- SECTION 1: DASHBOARD -->
+    <section class="page-container active" id="tab-dashboard">
+      <!-- Active Campaign Banner (Appears only during an active send) -->
+      <div class="card" id="active-job-banner" style="display: none; border-color: var(--primary);">
+        <div class="card-body" style="padding: 1rem 1.25rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+              <span class="badge badge-primary" id="banner-job-status">SENDING</span>
+              <strong id="banner-campaign-name">Active Campaign</strong>
+              <span style="font-size: 0.8rem; color: var(--text-muted);" id="banner-progress-counts">0 / 0 sent</span>
+            </div>
+            <div style="display: flex; gap: 0.5rem;">
+              <button class="btn btn-secondary btn-sm" id="btn-banner-pause" onclick="app.toggleActiveJobPause()">Pause</button>
+              <button class="btn btn-danger btn-sm" onclick="app.cancelActiveJob()">Stop</button>
+            </div>
+          </div>
+          <div style="height: 6px; background-color: var(--surface-subtle); border-radius: var(--radius-sm); overflow: hidden;">
+            <div id="banner-progress-fill" style="height: 100%; width: 100%; background-color: var(--primary); transform: scaleX(0); transform-origin: left; transition: transform 0.2s ease;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Context-Aware Hero / Readiness Banner -->
+      <div class="card" style="margin-bottom: 1.25rem;">
+        <div class="card-body" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; padding: 1.15rem 1.25rem;">
+          <div>
+            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+              <h2 style="font-size: 1.05rem; font-weight: 600; margin: 0;" id="dash-ready-heading">Ready to Dispatch</h2>
+              <span class="badge badge-neutral" id="dash-conn-badge" style="font-size: 0.72rem;">Checking</span>
+            </div>
+            <p style="font-size: 0.825rem; color: var(--text-secondary); margin: 0;" id="dash-ready-sub">
+              Checking contacts and messaging connection status...
+            </p>
+          </div>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <button class="btn btn-primary btn-sm" id="dash-hero-action-btn" onclick="app.navigate('campaigns')">Start Campaign</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Small 3-Action "Get Started" Panel (Shown only when app is empty/incomplete) -->
+      <div class="get-started-panel" id="first-run-guide-card" style="display: none;">
+        <div class="get-started-header">
+          <div>
+            <div class="get-started-title">Get Started with Relay</div>
+            <div class="get-started-sub">Complete these 3 steps to send your first message broadcast</div>
+          </div>
+          <button class="btn btn-subtle btn-sm" onclick="app.dismissFirstRunGuide()" style="padding: 0.15rem 0.4rem; font-size: 0.75rem;">Hide</button>
+        </div>
+        <div class="get-started-steps">
+          <!-- Step 1: Connect Browser -->
+          <div class="get-started-step" id="chk-step-profile">
+            <div class="get-started-step-top">
+              <span class="get-started-badge" id="chk-icon-profile">1</span>
+              <div class="get-started-info">
+                <strong>1. Connect Browser</strong>
+                <span id="chk-desc-profile">Select browser profile signed into WhatsApp Web.</span>
+              </div>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="app.navigate('settings')" id="chk-btn-profile">Configure</button>
+          </div>
+
+          <!-- Step 2: Add Contacts -->
+          <div class="get-started-step" id="chk-step-contacts">
+            <div class="get-started-step-top">
+              <span class="get-started-badge" id="chk-icon-contacts">2</span>
+              <div class="get-started-info">
+                <strong>2. Add Contacts</strong>
+                <span id="chk-desc-contacts">Import CSV spreadsheet or paste recipient numbers.</span>
+              </div>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="app.navigate('contacts')" id="chk-btn-contacts">Add Contacts</button>
+          </div>
+
+          <!-- Step 3: Create Message -->
+          <div class="get-started-step" id="chk-step-template">
+            <div class="get-started-step-top">
+              <span class="get-started-badge" id="chk-icon-template">3</span>
+              <div class="get-started-info">
+                <strong>3. Create Message</strong>
+                <span id="chk-desc-template">Draft a message template with personalization tags.</span>
+              </div>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="app.navigate('messages')" id="chk-btn-template">Create Draft</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Denser 2-Column Dashboard Grid -->
+      <div class="dashboard-grid">
+        <!-- Left Column: Connection & Audience Overview -->
+        <div>
+          <!-- Intelligent Connection Monitor Card -->
+          <div class="conn-monitor-card" id="dash-conn-monitor-card">
+            <div class="conn-monitor-header">
+              <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                <span class="card-title" style="font-size: 0.92rem;">Messaging Connection</span>
+                <span class="badge badge-primary" id="dash-mode-pill" style="font-size: 0.72rem;">Dedicated Relay Session</span>
+              </div>
+              <div class="conn-live-badge state-waiting_for_qr" id="dash-live-badge">
+                <span class="conn-pulse-dot pulse" id="dash-pulse-dot"></span>
+                <span id="dash-state-label">Waiting for QR scan</span>
+              </div>
+            </div>
+            <div class="card-body" style="padding: 1rem;">
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 0.5rem;">
+                <div>
+                  <strong style="font-size: 0.9rem;" id="dash-profile-title">Dedicated WhatsApp Session</strong>
+                  <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.15rem;" id="dash-profile-browser">Browser: Google Chrome · Profile: Dedicated Isolated Session</div>
+                </div>
+                <div style="font-size: 0.72rem; color: var(--text-muted);" id="dash-last-checked">
+                  Last checked: Just now
+                </div>
+              </div>
+
+              <!-- Live Activity Box -->
+              <div class="conn-activity-box" id="dash-activity-box">
+                <span style="font-size: 0.9rem;">⏳</span>
+                <span id="dash-activity-text">Waiting for QR scan — checking again in 2s</span>
+              </div>
+
+              <!-- 5-Step Visual Timeline Stepper -->
+              <div class="conn-stepper" id="dash-timeline-stepper">
+                <div class="stepper-step completed" id="dash-step-browser_launched">
+                  <div class="stepper-icon">✓</div>
+                  <div class="stepper-label">Browser launched</div>
+                  <div class="stepper-time" id="dash-time-browser_launched">—</div>
+                </div>
+                <div class="stepper-step completed" id="dash-step-whatsapp_opened">
+                  <div class="stepper-icon">✓</div>
+                  <div class="stepper-label">WhatsApp opened</div>
+                  <div class="stepper-time" id="dash-time-whatsapp_opened">—</div>
+                </div>
+                <div class="stepper-step current" id="dash-step-qr_detected">
+                  <div class="stepper-icon">●</div>
+                  <div class="stepper-label">QR detected</div>
+                  <div class="stepper-time" id="dash-time-qr_detected">—</div>
+                </div>
+                <div class="stepper-step" id="dash-step-login_confirmed">
+                  <div class="stepper-icon">○</div>
+                  <div class="stepper-label">Login confirmed</div>
+                  <div class="stepper-time" id="dash-time-login_confirmed">—</div>
+                </div>
+                <div class="stepper-step" id="dash-step-connection_ready">
+                  <div class="stepper-icon">○</div>
+                  <div class="stepper-label">Connection ready</div>
+                  <div class="stepper-time" id="dash-time-connection_ready">—</div>
+                </div>
+              </div>
+
+              <!-- Dynamic Action Buttons (Tailored by State) -->
+              <div class="conn-action-bar" id="dash-conn-actions">
+                <!-- Dynamically rendered -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Metrics Grid -->
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem;">
+            <div class="card" style="margin-bottom: 0;">
+              <div class="card-body" style="padding: 0.85rem 1rem;">
+                <div style="font-size: 0.72rem; color: var(--text-muted); font-weight: 500;">Saved contacts</div>
+                <div style="font-size: 1.3rem; font-weight: 600; margin-top: 0.2rem;" id="dash-stat-contacts">0</div>
+              </div>
+            </div>
+            <div class="card" style="margin-bottom: 0;">
+              <div class="card-body" style="padding: 0.85rem 1rem;">
+                <div style="font-size: 0.72rem; color: var(--text-muted); font-weight: 500;">Message drafts</div>
+                <div style="font-size: 1.3rem; font-weight: 600; margin-top: 0.2rem;" id="dash-stat-messages">0</div>
+              </div>
+            </div>
+            <div class="card" style="margin-bottom: 0;">
+              <div class="card-body" style="padding: 0.85rem 1rem;">
+                <div style="font-size: 0.72rem; color: var(--text-muted); font-weight: 500;">Campaigns sent</div>
+                <div style="font-size: 1.3rem; font-weight: 600; margin-top: 0.2rem;" id="dash-stat-campaigns">0</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column: Recent Activity Feed -->
+        <div class="card" style="margin-bottom: 0;">
+          <div class="card-header" style="padding: 0.75rem 1rem; display: flex; justify-content: space-between; align-items: center;">
+            <span class="card-title">Recent Activity</span>
+            <button class="btn btn-subtle btn-sm" onclick="app.navigate('activity')">View All</button>
+          </div>
+          <div class="card-body" id="dash-recent-body" style="padding: 0;">
+            <!-- Populated dynamically or compact inline empty state -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 2: CONTACTS -->
+    <section class="page-container" id="tab-contacts">
+      <!-- Contacts Action Bar -->
+      <div class="card" style="margin-bottom: 1rem;">
+        <div class="card-body" style="padding: 0.85rem 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+            <div style="display: flex; gap: 0.5rem; flex: 1; min-width: 260px;">
+              <input type="text" class="form-input" id="contacts-search-input" placeholder="Search by name or number..." style="max-width: 280px;" oninput="app.onContactsSearch()">
+              <select class="form-select" id="contacts-group-filter" style="max-width: 180px;" onchange="app.onContactsFilterChange()">
+                <option value="All">All Groups</option>
+              </select>
+              <select class="form-select" id="contacts-consent-filter" style="max-width: 150px;" onchange="app.onContactsFilterChange()">
+                <option value="All">All Statuses</option>
+                <option value="opted_in">Opted-In</option>
+                <option value="opted_out">Opted-Out</option>
+              </select>
+            </div>
+            <div style="display: flex; gap: 0.5rem;">
+              <button class="btn btn-primary btn-sm" onclick="app.openAddContactModal()">+ Add Contact</button>
+              <button class="btn btn-secondary btn-sm" onclick="app.openPasteModal()">Paste Numbers</button>
+              <button class="btn btn-primary btn-sm" id="btn-import-contacts" onclick="app.openImportModal()">Import CSV / Excel</button>
+              <button class="btn btn-secondary btn-sm" onclick="app.exportContactsCSV()">Export All</button>
+              <button class="btn btn-secondary btn-sm" onclick="app.openManageGroupsModal()">Manage Groups</button>
+              <button class="btn btn-subtle btn-sm" onclick="app.openNewGroupModal()">+ Group</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Demo Records Warning Banner -->
+      <div id="contacts-demo-banner" class="alert alert-warning" style="display: none; margin-bottom: 0.75rem; justify-content: space-between; align-items: center; border-left: 4px solid var(--warning); padding: 0.65rem 1rem;">
+        <div>
+          <strong>Test Records Detected:</strong> Found <span id="demo-records-count">0</span> synthetic test records from previous test runs. Genuine contacts are preserved.
+        </div>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <button type="button" class="btn btn-warning btn-sm" onclick="app.openDemoRecordsModal()">Review & Remove Test Records</button>
+          <button type="button" class="btn btn-subtle btn-sm" onclick="document.getElementById('contacts-demo-banner').style.display='none'">Dismiss</button>
+        </div>
+      </div>
+
+      <!-- Duplicates Warning Banner -->
+      <div id="contacts-duplicates-banner" class="alert alert-info" style="display: none; margin-bottom: 0.75rem; justify-content: space-between; align-items: center; border-left: 4px solid var(--primary); padding: 0.65rem 1rem;">
+        <div>
+          <strong>Duplicate Phone Numbers:</strong> Found <span id="duplicates-count">0</span> duplicate contact cluster(s).
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" onclick="app.openMergeDuplicatesModal()">Review & Merge Duplicates</button>
+      </div>
+
+      <!-- Contacts Bulk Action Toolbar (Sticky top toolbar when selections exist) -->
+      <div id="contacts-bulk-bar" class="contacts-bulk-toolbar" style="display: none; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.5rem 1rem; margin-bottom: 0.75rem; border-radius: var(--radius-md); background: var(--bg-surface-elevated, #1a1e24); border: 1px solid var(--border-color); box-shadow: var(--shadow-sm);">
+        <div class="bulk-toolbar-left" style="display: flex; align-items: center; gap: 0.75rem;">
+          <span style="font-weight: 600; font-size: 0.8125rem; color: var(--text-primary); display: flex; align-items: center; gap: 0.35rem;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--primary);"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span id="bulk-selected-count">0 selected</span>
+          </span>
+        </div>
+        <div class="bulk-toolbar-actions" style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-bulk-delete-top" onclick="app.executeBulkDelete()" style="color: var(--danger); font-weight: 600; border-color: rgba(239, 68, 68, 0.4);">Delete (0)</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="app.promptBulkMove()">Move</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="app.promptBulkCopy()">Copy</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="app.promptBulkAddToGroup()">Add to Group</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="app.exportSelectedContacts()">Export</button>
+          <button type="button" class="btn btn-subtle btn-sm" onclick="app.clearContactSelection()" style="color: var(--text-muted);">Clear</button>
+        </div>
+      </div>
+
+      <!-- Filtered Select All Banner -->
+      <div id="contacts-filter-select-all-banner" class="alert alert-info" style="display: none; margin-bottom: 0.5rem; font-size: 0.8125rem; justify-content: space-between; align-items: center; padding: 0.5rem 1rem;">
+        <span id="contacts-filter-select-all-text">All contacts on this page are selected.</span>
+        <button type="button" class="btn btn-subtle btn-sm" id="btn-select-all-filtered" onclick="app.selectAllFilteredContacts()" style="text-decoration: underline; font-weight: 600;">Select all matching contacts across all pages</button>
+      </div>
+
+      <!-- Contacts Table Card -->
+      <div class="card">
+        <div class="card-header" id="contacts-card-header" style="padding: 0.65rem 1rem; display: flex; align-items: center; justify-content: space-between; min-height: 48px; gap: 0.75rem;">
+          <!-- Normal State (0 selected) -->
+          <div id="contacts-header-normal" style="display: flex; align-items: center; gap: 0.5rem;">
+            <label class="master-checkbox-container" style="display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.8125rem; font-weight: 500; color: var(--text-secondary); margin: 0; user-select: none;">
+              <input type="checkbox" id="chk-master-contacts" onchange="app.toggleSelectAllContacts(this.checked)" title="Select all contacts" style="cursor: pointer; width: 16px; height: 16px; accent-color: var(--primary);">
+              <span id="contacts-count-label">0 contacts</span>
+            </label>
+          </div>
+
+          <!-- Contextual Bulk Toolbar (Active immediately when selectedContactIds.size > 0) -->
+          <div id="contacts-header-bulk" style="display: none; align-items: center; gap: 0.75rem; flex-wrap: wrap; flex: 1;">
+            <div style="display: inline-flex; align-items: center; gap: 0.5rem;">
+              <input type="checkbox" id="chk-master-contacts-bulk" onchange="app.toggleSelectAllContacts(this.checked)" title="Select or deselect all contacts" style="cursor: pointer; width: 16px; height: 16px; accent-color: var(--primary);">
+              <strong id="bulk-selected-count-badge" style="font-size: 0.8125rem; color: var(--text-primary); white-space: nowrap;">0 selected</strong>
+            </div>
+            <div class="bulk-actions-group" style="display: inline-flex; align-items: center; gap: 0.35rem; flex-wrap: wrap;">
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-bulk-delete" onclick="app.executeBulkDelete()" style="color: var(--danger); font-weight: 600; border-color: rgba(239, 68, 68, 0.4);">
+                Delete (0)
+              </button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="app.promptBulkMove()">Move</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="app.promptBulkCopy()">Copy</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="app.promptBulkAddToGroup()">Add to Group</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="app.exportSelectedContacts()">Export</button>
+              <button type="button" class="btn btn-subtle btn-sm" onclick="app.clearContactSelection()" style="color: var(--text-muted);">Clear</button>
+            </div>
+          </div>
+
+          <div class="card-header-right" style="display: flex; align-items: center; gap: 0.5rem;">
+            <button class="btn btn-subtle btn-sm" id="btn-show-optouts" onclick="app.toggleSuppressionView()" style="color: var(--text-muted);">
+              View Blocked / Opt-Outs
+            </button>
+          </div>
+        </div>
+        <div class="card-body" id="contacts-view-body" style="padding: 0;">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 3: MESSAGES -->
+    <section class="page-container" id="tab-messages">
+      <!-- Workspace Subnav (Sets vs Library vs Composer) -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+        <div class="segmented-control" role="group" aria-label="Messages Workspace Views">
+          <button type="button" class="segmented-filter-btn active" id="subnav-msg-sets" onclick="app.switchMessagesSubView('sets')">Content Sets (Builder)</button>
+          <button type="button" class="segmented-filter-btn" id="subnav-msg-library" onclick="app.switchMessagesSubView('library')">Asset Library</button>
+          <button type="button" class="segmented-filter-btn" id="subnav-msg-composer" onclick="app.switchMessagesSubView('composer')">Message Composer</button>
+        </div>
+        <div id="sets-top-actions" style="display: flex; gap: 0.5rem;">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="app.openVariablesHelpModal()">? Variables & Shortcuts</button>
+          <button type="button" class="btn btn-primary btn-sm" onclick="app.openNewSetModal('text')">+ New Set</button>
+        </div>
+      </div>
+
+      <!-- SUBVIEW 1: Reusable Content Sets Builder (Split Wireframe View) -->
+      <div id="msg-subview-sets">
+        <div class="sets-builder-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start;">
+          
+          <!-- Left Column: MEDIA SETS -->
+          <div class="card" id="media-set-card">
+            <div class="card-header" style="display: flex; flex-direction: column; gap: 0.5rem; padding: 0.75rem 1rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                <div style="display: flex; align-items: center; gap: 0.5rem; flex: 1; flex-wrap: wrap;">
+                  <span style="font-weight: 700; font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--primary);">Media Set</span>
+                  <select class="form-select" id="media-set-select" style="max-width: 210px; padding: 0.25rem 0.5rem; font-size: 0.8125rem;" onchange="app.onMediaSetSelected(this.value)">
+                    <!-- Populated dynamically -->
+                  </select>
+                  <button type="button" class="btn btn-primary btn-sm" onclick="app.openNewSetModal('media')">+ New Set</button>
+                </div>
+                <div style="display: flex; gap: 0.35rem;">
+                  <input type="file" id="media-set-file-upload-input" class="visually-hidden" multiple accept="image/png,image/jpeg,image/webp,application/pdf,video/mp4" onchange="app.onMediaSetFilesSelected(event)">
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('media-set-file-upload-input').click()">Upload</button>
+                  <button type="button" class="btn btn-subtle btn-sm" onclick="app.duplicateActiveSet('media')" title="Duplicate active media set">Copy</button>
+                  <button type="button" class="btn btn-subtle btn-sm text-danger" onclick="app.deleteActiveSet('media')" title="Delete active media set">Delete</button>
+                </div>
+              </div>
+              <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; justify-content: space-between; align-items: center;">
+                <span>• Any one random per person or selected in bulk</span>
+                <span id="media-set-stats-badge" class="badge badge-neutral">0 assets</span>
+              </div>
+            </div>
+
+            <!-- Contextual Media Bulk Toolbar -->
+            <div id="media-set-bulk-bar" style="display: none; align-items: center; justify-content: space-between; padding: 0.45rem 1rem; background: var(--bg-surface-elevated, #1a1e24); border-bottom: 1px solid var(--border-color); font-size: 0.8125rem;">
+              <span id="media-set-bulk-count" style="font-weight: 600;">0 selected</span>
+              <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
+                <button type="button" class="btn btn-secondary btn-xs" onclick="app.bulkToggleSetItems('media', 1)">Include</button>
+                <button type="button" class="btn btn-secondary btn-xs" onclick="app.bulkToggleSetItems('media', 0)">Exclude</button>
+                <button type="button" class="btn btn-secondary btn-xs" onclick="app.promptMoveSetItems('media')">Move</button>
+                <button type="button" class="btn btn-secondary btn-xs" onclick="app.promptCopySetItems('media')">Copy</button>
+                <button type="button" class="btn btn-secondary btn-xs text-danger" onclick="app.bulkRemoveSetItems('media')">Remove</button>
+                <button type="button" class="btn btn-subtle btn-xs" onclick="app.clearSetSelection('media')">Clear</button>
+              </div>
+            </div>
+
+            <!-- Master Checkbox Header -->
+            <div style="padding: 0.5rem 1rem; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; font-size: 0.78rem; color: var(--text-secondary); background: var(--surface-subtle);">
+              <label style="display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; margin: 0; user-select: none;">
+                <input type="checkbox" id="chk-master-media-set" onchange="app.toggleSelectAllSetItems('media', this.checked)" style="accent-color: var(--primary); cursor: pointer;">
+                <span id="media-set-header-label">Select all items</span>
+              </label>
+              <button type="button" class="btn btn-subtle btn-xs" onclick="app.openAddMediaToSetModal()">+ Add From Library</button>
+            </div>
+
+            <!-- Media Items Grid (Cards) -->
+            <div class="card-body" id="media-set-items-grid" style="min-height: 380px; max-height: 600px; overflow-y: auto; padding: 0.75rem;">
+              <!-- Populated dynamically with media cards -->
+            </div>
+          </div>
+
+          <!-- Right Column: TEXT SETS -->
+          <div class="card" id="text-set-card">
+            <div class="card-header" style="display: flex; flex-direction: column; gap: 0.5rem; padding: 0.75rem 1rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                <div style="display: flex; align-items: center; gap: 0.5rem; flex: 1; flex-wrap: wrap;">
+                  <span style="font-weight: 700; font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--primary);">Text Set</span>
+                  <select class="form-select" id="text-set-select" style="max-width: 210px; padding: 0.25rem 0.5rem; font-size: 0.8125rem;" onchange="app.onTextSetSelected(this.value)">
+                    <!-- Populated dynamically -->
+                  </select>
+                  <button type="button" class="btn btn-primary btn-sm" onclick="app.openNewSetModal('text')">+ New Set</button>
+                </div>
+                <div style="display: flex; gap: 0.35rem;">
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="app.openImportTextSetModal()">Import</button>
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="app.exportActiveTextSet()">Export</button>
+                  <button type="button" class="btn btn-subtle btn-sm" onclick="app.duplicateActiveSet('text')" title="Duplicate active text set">Copy</button>
+                  <button type="button" class="btn btn-subtle btn-sm text-danger" onclick="app.deleteActiveSet('text')" title="Delete active text set">Delete</button>
+                </div>
+              </div>
+              <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; justify-content: space-between; align-items: center;">
+                <span>• Any one random per person or selected in bulk</span>
+                <span id="text-set-stats-badge" class="badge badge-neutral">0 messages</span>
+              </div>
+            </div>
+
+            <!-- Contextual Text Bulk Toolbar -->
+            <div id="text-set-bulk-bar" style="display: none; align-items: center; justify-content: space-between; padding: 0.45rem 1rem; background: var(--bg-surface-elevated, #1a1e24); border-bottom: 1px solid var(--border-color); font-size: 0.8125rem;">
+              <span id="text-set-bulk-count" style="font-weight: 600;">0 selected</span>
+              <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
+                <button type="button" class="btn btn-secondary btn-xs" onclick="app.bulkToggleSetItems('text', 1)">Include</button>
+                <button type="button" class="btn btn-secondary btn-xs" onclick="app.bulkToggleSetItems('text', 0)">Exclude</button>
+                <button type="button" class="btn btn-secondary btn-xs" onclick="app.promptMoveSetItems('text')">Move</button>
+                <button type="button" class="btn btn-secondary btn-xs" onclick="app.promptCopySetItems('text')">Copy</button>
+                <button type="button" class="btn btn-secondary btn-xs text-danger" onclick="app.bulkRemoveSetItems('text')">Remove</button>
+                <button type="button" class="btn btn-subtle btn-xs" onclick="app.clearSetSelection('text')">Clear</button>
+              </div>
+            </div>
+
+            <!-- Master Checkbox Header -->
+            <div style="padding: 0.5rem 1rem; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; font-size: 0.78rem; color: var(--text-secondary); background: var(--surface-subtle);">
+              <label style="display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; margin: 0; user-select: none;">
+                <input type="checkbox" id="chk-master-text-set" onchange="app.toggleSelectAllSetItems('text', this.checked)" style="accent-color: var(--primary); cursor: pointer;">
+                <span id="text-set-header-label">Select all messages</span>
+              </label>
+              <button type="button" class="btn btn-subtle btn-xs" onclick="app.openAddTemplatesToSetModal()">+ Add From Library</button>
+            </div>
+
+            <!-- Text Items List (Wireframe Rows) -->
+            <div class="card-body" id="text-set-items-list" style="min-height: 280px; max-height: 440px; overflow-y: auto; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem;">
+              <!-- Populated dynamically with message rows -->
+            </div>
+
+            <!-- Inline "+ Add Message to Set" Input Bar (Wireframe Arrow Target) -->
+            <div class="card-footer" style="padding: 0.75rem 1rem; background: var(--surface-subtle); border-top: 1px solid var(--border-color);">
+              <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                  <input type="text" id="inline-msg-title" class="form-input" placeholder="Message Title (e.g. November Offer)" style="flex: 1; font-size: 0.8125rem;">
+                  <div style="display: flex; gap: 0.25rem;">
+                    <button type="button" class="btn btn-secondary btn-xs" onclick="app.insertInlineVar('{name}')">{name}</button>
+                    <button type="button" class="btn btn-secondary btn-xs" onclick="app.insertInlineVar('{first_name}')">{first_name}</button>
+                    <button type="button" class="btn btn-secondary btn-xs" onclick="app.openVariablesHelpModal()" title="Variables & Shortcuts Help">?</button>
+                  </div>
+                </div>
+                <div style="display: flex; gap: 0.5rem;">
+                  <input type="text" id="inline-msg-content" class="form-input" placeholder="Hello {name}! Input text here..." style="flex: 1; font-size: 0.8125rem;">
+                  <button type="button" class="btn btn-primary btn-sm" onclick="app.addInlineMessageToActiveSet()">+ Add to Set</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- SUBVIEW 2: Reusable Asset Library -->
+      <div id="msg-subview-library" style="display: none;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <!-- Left Panel: Media Assets Bin -->
+          <div class="card">
+            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem;">
+              <div>
+                <span class="card-title">Media Library</span>
+                <div class="card-subtitle" id="library-media-count-label">0 assets stored</div>
+              </div>
+              <div style="display: flex; gap: 0.25rem;">
+                <input type="file" id="lib-workspace-upload-input" class="visually-hidden" accept="image/png,image/jpeg,image/webp,application/pdf,video/mp4" onchange="app.onLibraryUploadSelected(event)">
+                <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('lib-workspace-upload-input').click()">+ Upload</button>
+                <button type="button" class="btn btn-subtle btn-sm" onclick="app.loadLibraryAssets('all')">All</button>
+                <button type="button" class="btn btn-subtle btn-sm" onclick="app.loadLibraryAssets('image')">Images</button>
+                <button type="button" class="btn btn-subtle btn-sm" onclick="app.loadLibraryAssets('document')">Docs</button>
+              </div>
+            </div>
+            <div class="card-body" id="library-media-grid" style="max-height: 480px; overflow-y: auto; padding: 0.75rem;">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+
+          <!-- Right Panel: Message Templates Library -->
+          <div class="card">
+            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem;">
+              <div>
+                <span class="card-title">Saved Templates Library</span>
+                <div class="card-subtitle" id="library-templates-count-label">Reusable messages</div>
+              </div>
+              <button type="button" class="btn btn-primary btn-sm" onclick="app.switchMessagesSubView('composer')">+ New Message</button>
+            </div>
+            <div class="card-body" id="library-templates-list" style="max-height: 480px; overflow-y: auto; padding: 0.75rem;">
+              <!-- Dynamically populated templates -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUBVIEW 3: Message Composer & Live Phone Preview -->
+      <div id="msg-subview-composer" style="display: none;">
+      <!-- Composer & Preview Split Layout -->
+      <div class="composer-grid">
+        <!-- Left Column: Message Editor -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title" id="message-editor-title">Message Draft</div>
+              <div class="card-subtitle">Compose your message and personalized tags</div>
+            </div>
+            <button class="btn btn-subtle btn-sm" onclick="app.resetMessageEditor()">New Draft</button>
+          </div>
+          <div class="card-body">
+            <input type="hidden" id="msg-edit-id" value="">
+
+            <!-- Draft Recovery Alert -->
+            <div id="draft-recovered-banner" style="display: none; background: var(--primary-subtle); color: var(--primary); padding: 0.45rem 0.75rem; border-radius: var(--radius-sm); font-size: 0.78rem; margin-bottom: 0.85rem; justify-content: space-between; align-items: center;">
+              <span>Unsaved draft restored from local storage</span>
+              <button type="button" class="btn btn-subtle btn-sm" style="padding: 0.1rem 0.35rem; font-size: 0.72rem; color: var(--primary);" onclick="app.clearDraftStorage()">Discard Draft</button>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Message Title</label>
+              <input type="text" class="form-input" id="msg-title-input" placeholder="e.g. Appointment Reminder, Order Update" oninput="app.onMessageEditorChange()">
+            </div>
+
+            <div class="form-group">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                <label class="form-label" style="margin-bottom: 0;">Message Content</label>
+                <div style="display: flex; gap: 0.25rem;">
+                  <button type="button" class="btn btn-secondary btn-sm" style="padding: 0.15rem 0.4rem; font-size: 0.72rem;" onclick="app.insertVar('{name}')">{name}</button>
+                  <button type="button" class="btn btn-secondary btn-sm" style="padding: 0.15rem 0.4rem; font-size: 0.72rem;" onclick="app.insertVar('{first_name}')">{first_name}</button>
+                  <button type="button" class="btn btn-secondary btn-sm" style="padding: 0.15rem 0.4rem; font-size: 0.72rem;" onclick="app.insertVar('{phone}')">{phone}</button>
+                </div>
+              </div>
+              <textarea class="form-textarea" id="msg-content-input" rows="6" placeholder="Hello {name}, your appointment is scheduled..." oninput="app.onMessageEditorChange()"></textarea>
+              <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; margin-top: 0.25rem;">
+                <span id="msg-char-counter" style="color: var(--text-muted);">0 / 1024 characters</span>
+                <span id="msg-validation-tag-hint" style="color: var(--text-secondary);">Supported tags: {name}, {first_name}, {phone}</span>
+              </div>
+              <div id="msg-validation-warning" style="display: none; font-size: 0.75rem; color: var(--danger); margin-top: 0.25rem;"></div>
+            </div>
+
+            <!-- Custom Media Upload Area -->
+            <div class="form-group">
+              <label class="form-label">Attachment (Optional)</label>
+              <div class="media-upload-container">
+                <input type="file" id="msg-media-file-input" class="visually-hidden" accept="image/png,image/jpeg,image/webp,application/pdf,video/mp4" onchange="app.onMediaFileSelected(event)">
+                
+                <!-- Unselected Dropzone State -->
+                <div class="media-dropzone" id="msg-media-dropzone" onclick="document.getElementById('msg-media-file-input').click()">
+                  <div class="media-dropzone-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                  </div>
+                  <div class="media-dropzone-text">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); document.getElementById('msg-media-file-input').click()">Upload File</button>
+                    <button type="button" class="btn btn-primary btn-sm" onclick="event.stopPropagation(); app.openMediaLibraryModal()">Browse Library</button>
+                    <span class="media-dropzone-prompt">or drag and drop here</span>
+                  </div>
+                  <div class="media-dropzone-hint">JPG, PNG, WebP, MP4, or PDF up to 16 MB · Stored durably</div>
+                </div>
+
+                <!-- Selected Attachment State -->
+                <div class="media-selected-card" id="msg-media-selected-card" style="display: none;">
+                  <div class="media-selected-thumb" id="msg-media-thumb-wrap">
+                    <img id="msg-media-thumb-img" src="" alt="Thumbnail" style="display: none;">
+                    <span id="msg-media-thumb-icon" class="media-file-icon">📎</span>
+                  </div>
+                  <div class="media-selected-info">
+                    <div class="media-selected-name" id="msg-media-selected-name">filename.jpg</div>
+                    <div class="media-selected-size" id="msg-media-selected-size">0 KB</div>
+                    <div id="msg-media-hash-badge" style="font-family: var(--font-mono); font-size: 0.65rem; color: var(--text-muted); display: none;"></div>
+                  </div>
+                  <div class="media-selected-actions">
+                    <button type="button" class="btn btn-subtle btn-sm" onclick="app.openMediaLibraryModal()">Change</button>
+                    <button type="button" class="btn btn-subtle btn-sm text-danger" id="btn-clear-media" onclick="app.clearMediaSelection()">Remove</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Message Versions (Optional) - Collapsed by default -->
+            <details class="advanced-box" id="msg-versions-details" style="margin-top: 1rem;">
+              <summary style="font-weight: 500; font-size: 0.85rem; cursor: pointer;">
+                Message versions (optional)
+              </summary>
+              <div style="padding-top: 0.75rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                  <div style="font-size: 0.75rem; color: var(--text-muted);">Send different wording based on recipient group or language</div>
+                  <button type="button" class="btn btn-secondary btn-sm" id="btn-add-version" onclick="app.openAddVersionModal()">+ Add Version</button>
+                </div>
+                <div id="message-versions-list" style="display: flex; flex-direction: column; gap: 0.4rem;">
+                  <!-- Populated dynamically -->
+                </div>
+              </div>
+            </details>
+          </div>
+          <div class="card-footer" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+            <div style="display: flex; gap: 0.4rem;">
+              <button class="btn btn-secondary btn-sm" onclick="app.resetMessageEditor()">Clear</button>
+              <button class="btn btn-secondary btn-sm" id="btn-open-test-send" onclick="app.openTestSendModal()">Send Test Message</button>
+            </div>
+            <button class="btn btn-primary" onclick="app.saveMessageDraft()">Save Message</button>
+          </div>
+        </div>
+
+        <!-- Right Column: High-Fidelity Conversation Preview -->
+        <div>
+          <div class="chat-preview-shell" id="chat-preview-shell">
+            <!-- 1. Top Controls Bar: Sample Persona & Viewport Mode Toggles -->
+            <div class="chat-preview-toolbar">
+              <div class="chat-preview-toolbar-left">
+                <span class="chat-preview-toolbar-label">Previewing as:</span>
+                <select id="preview-persona-select" class="form-select" style="width: auto; padding: 0.2rem 0.5rem; font-size: 0.75rem;" onchange="app.onPreviewPersonaChange()">
+                  <option value="standard">Alice Smith (+1 415 555-2671)</option>
+                  <option value="spanish">Carlos Gomez (es · +34 612 345 678)</option>
+                  <option value="vip">Victoria Stone (VIP · +44 7911 123456)</option>
+                  <option value="new_lead">David Lee (+1 212 555-0199)</option>
+                </select>
+              </div>
+              <div class="chat-preview-toolbar-right">
+                <div class="preview-mode-switch" role="group" aria-label="Preview viewport size">
+                  <button type="button" class="preview-mode-btn active" id="btn-preview-desktop" onclick="app.setPreviewViewport('desktop')" title="Desktop Web chat width">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                    Desktop
+                  </button>
+                  <button type="button" class="preview-mode-btn" id="btn-preview-mobile" onclick="app.setPreviewViewport('mobile')" title="Compact mobile conversation width">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
+                    Mobile
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 2. Realistic Conversation Header -->
+            <div class="chat-conversation-header">
+              <div class="chat-avatar-wrap">
+                <div class="chat-avatar" id="preview-contact-avatar">AS</div>
+                <span class="chat-presence-dot" title="Online"></span>
+              </div>
+              <div class="chat-contact-info">
+                <div class="chat-contact-name" id="preview-contact-name">Alice Smith</div>
+                <div class="chat-contact-status" id="preview-contact-status">online · WhatsApp Web</div>
+              </div>
+              <div class="chat-header-actions">
+                <span class="chat-verified-badge" id="preview-audience-tag">Standard Tier</span>
+              </div>
+            </div>
+
+            <!-- 3. Conversation Canvas with Authentic Restrained Background -->
+            <div class="chat-canvas" id="chat-canvas">
+              <!-- Date Separator Badge -->
+              <div class="chat-date-separator">
+                <span>TODAY</span>
+              </div>
+
+              <!-- Contextual Incoming Bubble -->
+              <div class="chat-bubble chat-bubble-incoming" id="chat-bubble-incoming">
+                <div class="chat-bubble-content">Hi! Can you send me the latest update for my account?</div>
+                <div class="chat-bubble-meta">
+                  <span class="chat-bubble-time">10:41 AM</span>
+                </div>
+              </div>
+
+              <!-- Outgoing Live Message Preview Bubble -->
+              <div class="chat-bubble chat-bubble-outgoing" id="chat-bubble-outgoing">
+                <!-- Media Attachment Container -->
+                <div id="preview-media-container" style="display: none;">
+                  <!-- State A: Image/Banner -->
+                  <div id="preview-media-image-wrap" style="display: none;">
+                    <img id="preview-media-img" alt="Attached media preview" class="chat-media-img">
+                  </div>
+
+                  <!-- State B: Document File -->
+                  <div id="preview-media-doc-wrap" style="display: none;" class="chat-doc-card">
+                    <div class="chat-doc-icon">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+                    </div>
+                    <div class="chat-doc-details">
+                      <strong id="preview-doc-name">document.pdf</strong>
+                      <span id="preview-doc-meta">PDF document</span>
+                    </div>
+                  </div>
+
+                  <!-- State C: Media Loading Skeleton -->
+                  <div id="preview-media-loading" style="display: none;" class="chat-media-state chat-media-loading">
+                    <span style="display: inline-block; animation: spin 1s linear infinite; margin-right: 4px;">⟳</span> Loading media preview...
+                  </div>
+
+                  <!-- State D: Missing / Failed Media State -->
+                  <div id="preview-media-failed" style="display: none;" class="chat-media-state chat-media-failed">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                    <div>
+                      <strong>Media file missing or inaccessible</strong>
+                      <div style="font-size: 0.72rem; opacity: 0.85;">Attachment not found at specified path.</div>
+                    </div>
+                  </div>
+
+                  <!-- State E: Unsupported Media State -->
+                  <div id="preview-media-unsupported" style="display: none;" class="chat-media-state chat-media-unsupported">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="9" x2="15" y2="15"></line><line x1="15" y1="9" x2="9" y2="15"></line></svg>
+                    <div>
+                      <strong>Unsupported media format</strong>
+                      <div style="font-size: 0.72rem; opacity: 0.85;">Supported: JPG, PNG, MP4, and PDF.</div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Bubble Text with Accurate Wrapping -->
+                <div id="preview-bubble-text" class="chat-bubble-text">Hello, your message preview will appear here.</div>
+
+                <!-- Bubble Meta: Formatted Timestamp and Honest 'Draft Preview' indicator -->
+                <div class="chat-bubble-meta">
+                  <span id="preview-bubble-time" class="chat-bubble-time">10:42 AM</span>
+                  <span class="chat-preview-tag" title="Live draft preview rendered for this recipient">Draft Preview</span>
+                </div>
+              </div>
+
+              <!-- Empty Preview Notice (When composer content is empty) -->
+              <div id="preview-empty-state" style="display: none;" class="chat-empty-notice">
+                <div class="chat-empty-bubble">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                  <span>Compose your message on the left to see live formatting, tags, and media as recipients will see them.</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 4. Footer Note (Active Audience Version Rule) -->
+            <div class="chat-preview-footer">
+              <span id="preview-version-rule-text">Applies to: All recipients (Default version)</span>
+              <span class="chat-preview-tip">Variables dynamically resolved for this persona</span>
+            </div>
+          </div>
+
+          <!-- Saved Drafts List -->
+          <div class="card" style="margin-top: 1.25rem;">
+            <div class="card-header" style="padding: 0.75rem 1rem;">
+              <span class="card-title">Saved Messages</span>
+            </div>
+            <div class="card-body" id="messages-list-body" style="padding: 0;">
+              <!-- Populated dynamically -->
+            </div>
+          </div>
+        </div>
+      </div>
+      </div>
+    </section>
+
+    <!-- SECTION 4: CAMPAIGNS -->
+    <section class="page-container" id="tab-campaigns">
+      <div class="campaigns-layout">
+        <!-- Main Form Column -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Create Campaign</div>
+              <div class="card-subtitle">Send a personalized message broadcast to a selected audience</div>
+            </div>
+          </div>
+          <div class="card-body">
+            <!-- Campaign Draft Recovery Alert -->
+            <div id="camp-draft-recovered-banner" style="display: none; background: var(--primary-subtle); color: var(--primary); padding: 0.45rem 0.75rem; border-radius: var(--radius-sm); font-size: 0.78rem; margin-bottom: 0.85rem; justify-content: space-between; align-items: center;">
+              <span>Unsaved campaign draft restored</span>
+              <button type="button" class="btn btn-subtle btn-sm" style="padding: 0.1rem 0.35rem; font-size: 0.72rem; color: var(--primary);" onclick="app.clearCampaignDraftStorage()">Discard Draft</button>
+            </div>
+
+            <!-- 1. Campaign Name -->
+            <div class="form-group">
+              <label class="form-label">Campaign Name</label>
+              <input type="text" class="form-input" id="camp-name-input" placeholder="e.g. November Reminder, Customer Update" oninput="app.onCampaignEditorChange()">
+            </div>
+
+            <!-- 2. Target Audience Group -->
+            <div class="form-group">
+              <label class="form-label">Target Audience Group</label>
+              <select class="form-select" id="camp-group-select" onchange="app.onCampaignAudienceChange()">
+                <option value="Default">Default</option>
+              </select>
+            </div>
+
+            <!-- 2b. Content Assignment Source -->
+            <div class="form-group">
+              <label class="form-label">Campaign Content Assignment Source</label>
+              <div class="radio-card-group" role="radiogroup" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 0.75rem;">
+                <label class="radio-card active selected" id="source-label-sets" for="source-radio-sets">
+                  <input type="radio" name="camp-content-source" id="source-radio-sets" value="sets" class="radio-card-input" checked onchange="app.onCampaignContentSourceChange('sets')">
+                  <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; margin-bottom: 0.25rem;">
+                    <span style="font-weight: 600; font-size: 0.85rem;">Content Sets</span>
+                    <span class="radio-indicator" aria-hidden="true"></span>
+                  </div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted);">Text & Media Sets</div>
+                </label>
+                <label class="radio-card" id="source-label-single" for="source-radio-single">
+                  <input type="radio" name="camp-content-source" id="source-radio-single" value="single" class="radio-card-input" onchange="app.onCampaignContentSourceChange('single')">
+                  <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; margin-bottom: 0.25rem;">
+                    <span style="font-weight: 600; font-size: 0.85rem;">Single Message</span>
+                    <span class="radio-indicator" aria-hidden="true"></span>
+                  </div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted);">One draft + media</div>
+                </label>
+                <label class="radio-card" id="source-label-collection" for="source-radio-collection">
+                  <input type="radio" name="camp-content-source" id="source-radio-collection" value="collection" class="radio-card-input" onchange="app.onCampaignContentSourceChange('collection')">
+                  <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; margin-bottom: 0.25rem;">
+                    <span style="font-weight: 600; font-size: 0.85rem;">Collection</span>
+                    <span class="radio-indicator" aria-hidden="true"></span>
+                  </div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted);">Fixed pairs</div>
+                </label>
+              </div>
+            </div>
+
+            <!-- Content Sets Options Container -->
+            <div id="camp-source-container-sets">
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                <div class="form-group">
+                  <label class="form-label">Select Text Set</label>
+                  <select class="form-select" id="camp-text-set-select" onchange="app.onCampaignContentChange()">
+                    <!-- Populated dynamically -->
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Attach Media Set (Optional)</label>
+                  <select class="form-select" id="camp-media-set-select" onchange="app.onCampaignContentChange()">
+                    <option value="">-- No media set (Text only) --</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-hint" style="margin-top: -0.25rem; margin-bottom: 0.75rem;">
+                Distributes messages and media across recipients based on set allocation mode. Excluded items are automatically bypassed.
+              </div>
+            </div>
+
+            <!-- Single Draft Container -->
+            <div id="camp-source-container-single" style="display: none;">
+              <div class="form-group">
+                <label class="form-label">Select Message</label>
+                <select class="form-select" id="camp-template-select" onchange="app.onCampaignMessageChange()">
+                  <option value="">-- Choose saved message --</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Attach Media (Optional)</label>
+                <select class="form-select" id="camp-media-select" onchange="app.onCampaignContentChange()">
+                  <option value="">-- No media attachment (Text only) --</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Collection Container -->
+            <div id="camp-source-container-collection" style="display: none;">
+              <div class="form-group">
+                <label class="form-label">Content Collection</label>
+                <select class="form-select" id="camp-collection-select" onchange="app.onCampaignCollectionChange()">
+                  <option value="">-- Choose collection --</option>
+                </select>
+                <div class="form-hint">Assigns approved message & media combinations to recipients.</div>
+              </div>
+            </div>
+
+            <!-- 3c. Message Variant Allocation Strategy -->
+            <div class="form-group">
+              <label class="form-label">Variant Allocation Strategy</label>
+              <select class="form-select" id="camp-allocation-method" onchange="app.onAllocationMethodChange()">
+                <option value="explicit_default">Explicit Default (Send base template)</option>
+                <option value="rule_based">Rule-Based Matching (Target tier/language/attributes)</option>
+                <option value="balanced_rotation">Balanced Rotation (Round-robin across approved variants)</option>
+                <option value="ab_test">Reproducible A/B Testing (Deterministic hash split)</option>
+              </select>
+              <div id="camp-ab-seed-box" style="display: none; margin-top: 0.5rem;">
+                <label class="form-label" style="font-size: 0.75rem;">A/B Test Random Seed</label>
+                <input type="number" class="form-input" id="camp-allocation-seed" value="42" style="max-width: 140px;">
+                <div class="form-hint">Seed ensures identical recipients receive identical variants across retries.</div>
+              </div>
+            </div>
+
+            <!-- 4. Sending Pace -->
+            <div class="form-group">
+              <label class="form-label">Sending Pace</label>
+              <div class="radio-card-group" role="radiogroup" aria-label="Sending Pace Options" style="grid-template-columns: repeat(3, 1fr);">
+                <!-- Normal Pace -->
+                <label class="radio-card pace-option-card active selected" id="pace-label-normal" for="pace-radio-normal">
+                  <input type="radio" name="camp-pace" id="pace-radio-normal" value="balanced" class="radio-card-input" checked onchange="app.setCampaignPace('balanced')">
+                  <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; margin-bottom: 0.25rem;">
+                    <span style="font-weight: 600; font-size: 0.85rem;">Normal</span>
+                    <span class="radio-indicator" aria-hidden="true"></span>
+                  </div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted);">8–15s delay</div>
+                </label>
+
+                <!-- Relaxed Pace -->
+                <label class="radio-card pace-option-card" id="pace-label-relaxed" for="pace-radio-relaxed">
+                  <input type="radio" name="camp-pace" id="pace-radio-relaxed" value="safe" class="radio-card-input" onchange="app.setCampaignPace('safe')">
+                  <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; margin-bottom: 0.25rem;">
+                    <span style="font-weight: 600; font-size: 0.85rem;">Relaxed</span>
+                    <span class="radio-indicator" aria-hidden="true"></span>
+                  </div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted);">12–20s delay</div>
+                </label>
+
+                <!-- Fast Pace -->
+                <label class="radio-card pace-option-card" id="pace-label-fast" for="pace-radio-fast">
+                  <input type="radio" name="camp-pace" id="pace-radio-fast" value="fast" class="radio-card-input" onchange="app.setCampaignPace('fast')">
+                  <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; margin-bottom: 0.25rem;">
+                    <span style="font-weight: 600; font-size: 0.85rem;">Fast</span>
+                    <span class="radio-indicator" aria-hidden="true"></span>
+                  </div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted);">4–8s delay</div>
+                </label>
+              </div>
+            </div>
+
+            <!-- 5. Dispatch Schedule -->
+            <div class="form-group">
+              <label class="form-label">Dispatch Timing</label>
+              <div style="display: flex; gap: 1.25rem; align-items: center; margin-bottom: 0.5rem;">
+                <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer;">
+                  <input type="radio" name="camp-schedule-mode" value="now" checked onchange="app.toggleScheduleMode('now')">
+                  <span>Send immediately</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer;">
+                  <input type="radio" name="camp-schedule-mode" value="later" onchange="app.toggleScheduleMode('later')">
+                  <span>Schedule for later</span>
+                </label>
+              </div>
+              <div id="camp-schedule-box" style="display: none; margin-top: 0.5rem;">
+                <input type="datetime-local" class="form-input" id="camp-schedule-datetime" style="max-width: 280px;">
+                <div class="form-hint">Campaign will automatically stage recipients and begin sending at the scheduled time.</div>
+              </div>
+            </div>
+
+            <!-- 6. Progressive Disclosure: Advanced Options (Collapsed) -->
+            <details class="advanced-box">
+              <summary style="font-weight: 500; font-size: 0.85rem; cursor: pointer;">Advanced delivery settings (pacing details, daily cap, retries)</summary>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.75rem;">
+                <div>
+                  <label class="form-label">Min Delay (seconds)</label>
+                  <input type="number" class="form-input" id="camp-min-delay" value="8" min="1" max="60" oninput="app.updateCampaignReview()">
+                </div>
+                <div>
+                  <label class="form-label">Max Delay (seconds)</label>
+                  <input type="number" class="form-input" id="camp-max-delay" value="15" min="1" max="120" oninput="app.updateCampaignReview()">
+                </div>
+                <div>
+                  <label class="form-label">Daily Limit</label>
+                  <input type="number" class="form-input" id="camp-daily-cap" value="100" min="1" max="1000">
+                </div>
+                <div>
+                  <label class="form-label">Max Retries on Error</label>
+                  <input type="number" class="form-input" id="camp-max-retries" value="3" min="0" max="5">
+                </div>
+              </div>
+            </details>
+
+            <!-- Simulation Toggle -->
+            <div style="margin-top: 1rem;">
+              <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem; color: var(--text-secondary); cursor: pointer;">
+                <input type="checkbox" id="camp-use-mock">
+                <span>Run in <strong>Simulation Mode</strong> (tests queue and preview without opening WhatsApp)</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Summary Column (Sticky) -->
+        <div class="campaign-summary-col">
+          <div class="card">
+            <div class="card-header" style="padding: 0.75rem 1rem;">
+              <span class="card-title">Pre-Flight Summary</span>
+            </div>
+            <div class="card-body" style="padding: 1rem;">
+              <!-- Selected Message Snippet -->
+              <div class="summary-item">
+                <span class="summary-label">Selected Message</span>
+                <div id="camp-summary-msg-name" class="summary-val-highlight">None selected</div>
+                <div id="camp-summary-msg-snippet" class="summary-snippet">Choose a message template to review content.</div>
+              </div>
+
+              <!-- Audience Breakdown Grid -->
+              <div class="summary-metrics-grid">
+                <div class="summary-stat">
+                  <span class="summary-stat-label">Eligible Contacts</span>
+                  <span class="summary-stat-value success" id="camp-rev-selected">0 contacts</span>
+                </div>
+                <div class="summary-stat">
+                  <span class="summary-stat-label">Suppressed / Opt-Out</span>
+                  <span class="summary-stat-value warning" id="camp-rev-excluded">0 excluded</span>
+                </div>
+                <div class="summary-stat">
+                  <span class="summary-stat-label">Duplicate Numbers</span>
+                  <span class="summary-stat-value" id="camp-rev-duplicates" style="color: var(--text-muted);">0 duplicate</span>
+                </div>
+                <div class="summary-stat">
+                  <span class="summary-stat-label">Estimated Send Window</span>
+                  <span class="summary-stat-value" id="camp-rev-time">—</span>
+                </div>
+              </div>
+
+              <!-- Launch Action & Validation Explanation -->
+              <div class="campaign-launch-gate">
+                <button class="btn btn-primary btn-block" id="btn-start-campaign" onclick="app.startCampaign()" disabled>
+                  Start Campaign
+                </button>
+                <div class="campaign-missing-hint" id="camp-validation-hint">
+                  Please enter a campaign name, select an audience, and choose a message template.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pre-Send Recipient Content Allocation Preview Table -->
+      <div class="card" style="margin-top: 1rem;" id="camp-allocation-preview-card">
+        <div class="card-header" style="padding: 0.75rem 1rem; display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <span class="card-title">Pre-Send Recipient Content Allocations</span>
+            <div class="card-subtitle">Verify assigned Message and Media for each recipient before sending</div>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="app.refreshAllocationPreview()">Refresh Allocations</button>
+        </div>
+        <div class="card-body" id="camp-allocation-preview-body" style="padding: 0; max-height: 280px; overflow-y: auto;">
+          <div style="padding: 1.5rem; text-align: center; color: var(--text-muted); font-size: 0.8125rem;">
+            Select an audience and message/collection to preview assigned recipients.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 5: ACTIVITY -->
+    <section class="page-container" id="tab-activity">
+      <!-- Activity Filters -->
+      <div class="card" style="margin-bottom: 1rem;">
+        <div class="card-body" style="padding: 0.75rem 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+            <div class="segmented-control" role="group" aria-label="Filter activity by status">
+              <button class="segmented-filter-btn active" id="act-filter-all" aria-pressed="true" onclick="app.setActivityFilter('ALL')">All</button>
+              <button class="segmented-filter-btn" id="act-filter-active" aria-pressed="false" onclick="app.setActivityFilter('ACTIVE')">Active</button>
+              <button class="segmented-filter-btn" id="act-filter-scheduled" aria-pressed="false" onclick="app.setActivityFilter('SCHEDULED')">Scheduled</button>
+              <button class="segmented-filter-btn" id="act-filter-completed" aria-pressed="false" onclick="app.setActivityFilter('COMPLETED')">Completed</button>
+              <button class="segmented-filter-btn" id="act-filter-paused" aria-pressed="false" onclick="app.setActivityFilter('PAUSED')">Paused</button>
+              <button class="segmented-filter-btn" id="act-filter-failed" aria-pressed="false" onclick="app.setActivityFilter('FAILED')">Failed</button>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="app.loadActivityData()">Refresh</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Campaign Progress Card (Shown when an active job is queued, running, waiting, or paused) -->
+      <div class="live-campaign-card" id="act-live-card" style="display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem;">
+          <div>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <strong style="font-size: 0.95rem;" id="act-live-camp-name">November Campaign</strong>
+              <span class="badge badge-warning" id="act-live-camp-badge">Waiting for connection</span>
+            </div>
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.15rem;" id="act-live-current-recipient">
+              Currently processing: +1 415 ••• ••71 (Alice Smith)
+            </div>
+          </div>
+          <div style="display: flex; gap: 0.4rem; align-items: center;">
+            <button class="btn btn-secondary btn-sm" id="btn-live-inspect" onclick="app.inspectActiveJobDrawer()">Inspect Recipients</button>
+            <button class="btn btn-secondary btn-sm" id="btn-live-pause" onclick="app.pauseActiveJob()">Pause</button>
+            <button class="btn btn-primary btn-sm" id="btn-live-resume" style="display: none;" onclick="app.resumeActiveJob()">Resume</button>
+            <button class="btn btn-subtle btn-sm" id="btn-live-cancel" style="color: var(--danger);" onclick="app.cancelActiveJob()">Cancel</button>
+          </div>
+        </div>
+
+        <!-- Progress bar -->
+        <div class="live-progress-track">
+          <div class="live-progress-fill" id="act-live-progress-bar" style="width: 0%;"></div>
+        </div>
+
+        <!-- Metrics Strip -->
+        <div class="live-stats-strip">
+          <div class="live-stat-item">Progress: <strong id="act-live-stat-pct">0%</strong></div>
+          <div class="live-stat-item">Sent: <strong style="color: var(--success);" id="act-live-stat-sent">0</strong></div>
+          <div class="live-stat-item">Pending: <strong style="color: var(--text-secondary);" id="act-live-stat-pending">0</strong></div>
+          <div class="live-stat-item">Failed: <strong style="color: var(--danger);" id="act-live-stat-failed">0</strong></div>
+          <div class="live-stat-item">Suppressed: <strong style="color: var(--text-muted);" id="act-live-stat-skipped">0</strong></div>
+        </div>
+
+        <!-- Last Action / Reason Ticker -->
+        <div style="margin-top: 0.6rem; font-size: 0.75rem; color: var(--text-secondary); display: flex; justify-content: space-between; align-items: center; background: var(--surface-subtle); padding: 0.4rem 0.65rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+          <span id="act-live-last-action">Last action: Initialized queue</span>
+          <span id="act-live-last-error" style="color: var(--danger); display: none;"></span>
+        </div>
+      </div>
+
+      <!-- Activity Table -->
+      <div class="card">
+        <div class="card-header" style="padding: 0.75rem 1rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <span class="card-title">Activity Log</span>
+            <span style="font-size: 0.78rem; color: var(--text-muted);" id="activity-count-label">0 items</span>
+          </div>
+          <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.78rem; color: var(--text-secondary); cursor: pointer; user-select: none;">
+            <input type="checkbox" id="privacy-mode-toggle" onchange="app.togglePrivacyMode()">
+            <span>Privacy Mode (Mask Numbers)</span>
+          </label>
+        </div>
+        <div class="card-body" id="activity-table-body" style="padding: 0;">
+          <!-- Dynamically populated or empty state -->
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 6: SETTINGS -->
+    <section class="page-container" id="tab-settings">
+      <div style="max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 1.25rem;">
+        <!-- 1. Messaging Connection -->
+        <div class="conn-monitor-card" id="settings-conn-monitor-card">
+          <div class="conn-monitor-header">
+            <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+              <span class="card-title" style="font-size: 0.92rem;">Messaging Connection</span>
+              <span class="badge badge-primary" id="settings-mode-badge" style="font-size: 0.72rem;">Dedicated Relay Session</span>
+            </div>
+            <div class="conn-live-badge state-waiting_for_qr" id="settings-live-badge">
+              <span class="conn-pulse-dot pulse" id="settings-pulse-dot"></span>
+              <span id="settings-state-label">Waiting for QR scan</span>
+            </div>
+          </div>
+          <div class="card-body" style="padding: 1rem;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 0.5rem;">
+              <div>
+                <strong style="font-size: 0.9rem;" id="conn-profile-name">Dedicated WhatsApp Session</strong>
+                <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.15rem;" id="conn-browser-details">Browser: Google Chrome · Profile: Dedicated Isolated Session</div>
+              </div>
+              <div style="font-size: 0.72rem; color: var(--text-muted);" id="conn-last-checked">
+                Last checked: Just now
+              </div>
+            </div>
+
+            <!-- Live Activity Box -->
+            <div class="conn-activity-box" id="conn-activity-box">
+              <span style="font-size: 0.9rem;">⏳</span>
+              <span id="conn-status-message">Waiting for QR scan — checking again in 2s</span>
+            </div>
+
+            <!-- 5-Step Visual Timeline Stepper -->
+            <div class="conn-stepper" id="settings-timeline-stepper">
+              <div class="stepper-step completed" id="settings-step-browser_launched">
+                <div class="stepper-icon">✓</div>
+                <div class="stepper-label">Browser launched</div>
+                <div class="stepper-time" id="settings-time-browser_launched">—</div>
+              </div>
+              <div class="stepper-step completed" id="settings-step-whatsapp_opened">
+                <div class="stepper-icon">✓</div>
+                <div class="stepper-label">WhatsApp opened</div>
+                <div class="stepper-time" id="settings-time-whatsapp_opened">—</div>
+              </div>
+              <div class="stepper-step current" id="settings-step-qr_detected">
+                <div class="stepper-icon">●</div>
+                <div class="stepper-label">QR detected</div>
+                <div class="stepper-time" id="settings-time-qr_detected">—</div>
+              </div>
+              <div class="stepper-step" id="settings-step-login_confirmed">
+                <div class="stepper-icon">○</div>
+                <div class="stepper-label">Login confirmed</div>
+                <div class="stepper-time" id="settings-time-login_confirmed">—</div>
+              </div>
+              <div class="stepper-step" id="settings-step-connection_ready">
+                <div class="stepper-icon">○</div>
+                <div class="stepper-label">Connection ready</div>
+                <div class="stepper-time" id="settings-time-connection_ready">—</div>
+              </div>
+            </div>
+
+            <!-- Dynamic Actions Bar -->
+            <div class="conn-action-bar" id="settings-conn-actions">
+              <!-- Dynamically populated -->
+            </div>
+
+            <!-- Profile Memory & Auto-reconnect Settings -->
+            <div style="margin-top: 1rem; padding: 0.75rem 0.85rem; background: var(--surface-subtle); border: 1px solid var(--border-color); border-radius: var(--radius-sm); display: flex; flex-direction: column; gap: 0.5rem;">
+              <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.8125rem; user-select: none;">
+                <input type="checkbox" id="chk-remember-profile" checked onchange="app.updateProfilePreferences()">
+                <span><strong>Remember my browser profile</strong> <span style="color: var(--text-muted); font-size: 0.75rem;">(keeps your preferred profile selected across restarts)</span></span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.8125rem; user-select: none;">
+                <input type="checkbox" id="chk-auto-connect" onchange="app.updateProfilePreferences()">
+                <span><strong>Automatically reconnect to the saved profile on startup</strong> <span style="color: var(--text-muted); font-size: 0.75rem;">(launches session monitor on startup)</span></span>
+              </label>
+            </div>
+
+            <!-- Interactive Connection Models Selector -->
+            <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border-color);">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.65rem;">
+                <div style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">
+                  Choose Messaging Connection Model
+                </div>
+                <span style="font-size: 0.72rem; color: var(--text-muted);">Select a model to configure automation routing</span>
+              </div>
+              <div class="radio-card-group" role="radiogroup" aria-label="Messaging Connection Model" style="grid-template-columns: 1fr 1fr;">
+                <!-- Model 1: Dedicated Relay Session -->
+                <label class="radio-card connection-model-card active selected" id="model-card-dedicated" for="radio-model-dedicated">
+                  <input type="radio" name="connection-model" id="radio-model-dedicated" value="dedicated" class="radio-card-input" checked onchange="app.selectConnectionModel('dedicated')">
+                  <div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.35rem;">
+                      <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <span class="radio-indicator" aria-hidden="true"></span>
+                        <strong class="browser-model-title" style="font-size: 0.85rem;">Dedicated Relay Session</strong>
+                      </div>
+                      <div style="display: flex; gap: 0.3rem;">
+                        <span class="badge badge-success" style="font-size: 0.65rem;">Recommended</span>
+                        <span class="badge badge-primary model-selected-pill" id="model-dedicated-selected-pill" style="font-size: 0.65rem;">Selected</span>
+                      </div>
+                    </div>
+                    <div style="font-size: 0.72rem; color: var(--text-secondary); line-height: 1.4; margin-left: 1.65rem;">
+                      Isolated app-managed session. Eliminates profile lock conflicts with your everyday browsing windows. Requires a one-time QR sign-in.
+                    </div>
+                  </div>
+                  <!-- Embedded Actions (Revealed when selected) -->
+                  <div class="model-embedded-actions" id="model-dedicated-actions" style="margin-top: 0.5rem; margin-left: 1.65rem;">
+                    <span style="font-size: 0.75rem; color: var(--text-muted);">
+                      ✓ Supported under Chrome 136+ security policies. Managed through the connection summary above.
+                    </span>
+                  </div>
+                </label>
+
+                <!-- Model 2: Existing Browser Profile -->
+                <label class="radio-card connection-model-card" id="model-card-existing" for="radio-model-existing">
+                  <input type="radio" name="connection-model" id="radio-model-existing" value="existing" class="radio-card-input" onchange="app.selectConnectionModel('existing')">
+                  <div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.35rem;">
+                      <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <span class="radio-indicator" aria-hidden="true"></span>
+                        <strong class="browser-model-title" style="font-size: 0.85rem;">Existing Browser Profile</strong>
+                      </div>
+                      <span class="badge badge-primary model-selected-pill" id="model-existing-selected-pill" style="font-size: 0.65rem; display: none;">Selected</span>
+                    </div>
+                    <div style="font-size: 0.72rem; color: var(--text-secondary); line-height: 1.4; margin-left: 1.65rem;">
+                      Reuses an existing local Chrome, Edge, or Brave profile already signed into WhatsApp Web. Usable only when supported by browser security policies.
+                    </div>
+                  </div>
+                  <!-- Embedded Actions (Revealed when selected) -->
+                  <div class="model-embedded-actions" id="model-existing-actions" style="display: none; margin-top: 0.5rem; margin-left: 1.65rem; align-items: center; justify-content: space-between; width: 100%;">
+                    <div style="font-size: 0.75rem; color: var(--text-muted);" id="model-existing-profile-summary">
+                      Profile: Not selected yet
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-sm" id="btn-model-choose-profile" onclick="event.stopPropagation(); app.openProfilePickerModal()">
+                      Change Profile
+                    </button>
+                  </div>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. Appearance & Theme -->
+        <div class="card">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <div class="card-title">Appearance & Theme</div>
+              <div class="card-subtitle">Choose interface appearance or sync with system preferences</div>
+            </div>
+            <span class="badge badge-neutral" id="current-theme-badge">System</span>
+          </div>
+          <div class="card-body">
+            <fieldset class="radio-card-group" role="radiogroup" aria-label="Appearance and Theme Options" style="grid-template-columns: repeat(3, 1fr);">
+              <legend class="sr-only" style="position: absolute; opacity: 0; width: 1px; height: 1px; overflow: hidden;">Theme Options</legend>
+              <!-- Option 1: System -->
+              <label class="radio-card theme-option-card" id="theme-card-system" for="radio-theme-system">
+                <input type="radio" name="app-theme" id="radio-theme-system" value="system" class="radio-card-input" onchange="app.setTheme('system')">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.25rem;">
+                  <span style="font-weight: 600; font-size: 0.85rem;">System</span>
+                  <span class="radio-indicator" aria-hidden="true"></span>
+                </div>
+                <div style="font-size: 0.72rem; color: var(--text-muted); line-height: 1.4;">Sync with OS light/dark mode</div>
+              </label>
+
+              <!-- Option 2: Light -->
+              <label class="radio-card theme-option-card" id="theme-card-light" for="radio-theme-light">
+                <input type="radio" name="app-theme" id="radio-theme-light" value="light" class="radio-card-input" onchange="app.setTheme('light')">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.25rem;">
+                  <span style="font-weight: 600; font-size: 0.85rem;">Light</span>
+                  <span class="radio-indicator" aria-hidden="true"></span>
+                </div>
+                <div style="font-size: 0.72rem; color: var(--text-muted); line-height: 1.4;">Clean neutral daylight palette</div>
+              </label>
+
+              <!-- Option 3: Void -->
+              <label class="radio-card theme-option-card" id="theme-card-void" for="radio-theme-void">
+                <input type="radio" name="app-theme" id="radio-theme-void" value="void" class="radio-card-input" onchange="app.setTheme('void')">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.25rem;">
+                  <div style="display: flex; align-items: center; gap: 0.35rem;">
+                    <span style="font-weight: 600; font-size: 0.85rem;">Void</span>
+                    <span class="badge badge-primary" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;">Onyx</span>
+                  </div>
+                  <span class="radio-indicator" aria-hidden="true"></span>
+                </div>
+                <div style="font-size: 0.72rem; color: var(--text-muted); line-height: 1.4;">Layered true charcoal dark theme</div>
+              </label>
+            </fieldset>
+            <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.65rem;">
+              Theme preferences apply and save instantly to local storage.
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Pacing Defaults & Formatting -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Sending Defaults</div>
+              <div class="card-subtitle">Default delay bounds and phone number country codes</div>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="form-group">
+              <label class="form-label">Default Country Code (Optional)</label>
+              <input type="text" class="form-input" id="cfg-country-code" placeholder="e.g. 1 for US/CA, 44 for UK, 91 for India" style="max-width: 240px;">
+              <div class="form-hint">Used when imported numbers do not contain an international country code prefix.</div>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+              <div class="form-group">
+                <label class="form-label">Default Min Delay (s)</label>
+                <input type="number" class="form-input" id="cfg-min-delay" min="1" max="60" value="8">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Default Max Delay (s)</label>
+                <input type="number" class="form-input" id="cfg-max-delay" min="1" max="120" value="15">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Daily Sending Cap</label>
+              <input type="number" class="form-input" id="cfg-daily-cap" min="1" max="1000" value="100" style="max-width: 240px;">
+            </div>
+          </div>
+          <div class="card-footer">
+            <button class="btn btn-primary btn-sm" onclick="app.saveSettings()">Save Settings</button>
+          </div>
+        </div>
+
+        <!-- 3. Data & Export Tools -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Data Tools & Backup</div>
+              <div class="card-subtitle">Export records, download full system backups, or restore local settings</div>
+            </div>
+          </div>
+          <div class="card-body" style="display: flex; flex-direction: column; gap: 1rem;">
+            <!-- Export Contacts -->
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem;">
+              <div>
+                <div style="font-size: 0.85rem; font-weight: 500;">Export All Contacts</div>
+                <div style="font-size: 0.75rem; color: var(--text-muted);">Download a complete CSV backup of saved contacts and consent status.</div>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="app.exportContactsCSV()">Export Contacts</button>
+            </div>
+
+            <!-- Export Activity -->
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem;">
+              <div>
+                <div style="font-size: 0.85rem; font-weight: 500;">Export Activity Audit Log</div>
+                <div style="font-size: 0.75rem; color: var(--text-muted);">Download a full CSV of dispatch history, error causes, and system events.</div>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="app.exportActivityCSV()">Export Activity</button>
+            </div>
+
+            <!-- Backup & Restore Snapshot -->
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+              <div>
+                <div style="font-size: 0.85rem; font-weight: 500;">Local Backup & Restore</div>
+                <div style="font-size: 0.75rem; color: var(--text-muted);">Snapshot your settings, message templates, and audience groups to a JSON file.</div>
+              </div>
+              <div style="display: flex; gap: 0.4rem; align-items: center;">
+                <button class="btn btn-secondary btn-sm" onclick="app.downloadBackupJSON()">Download Backup</button>
+                <label class="btn btn-secondary btn-sm" style="margin: 0; cursor: pointer;">
+                  Restore Backup
+                  <input type="file" id="restore-backup-file-input" accept=".json" style="display: none;" onchange="app.onRestoreBackupSelected(event)">
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- MODALS -->
+
+  <!-- Modal 1: Import Contacts File -->
+  <div class="modal-backdrop" id="modal-import">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">Import Contacts</h3>
+        <button class="modal-close" onclick="app.closeModal('modal-import')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="import-step-file">
+          <div class="file-dropzone" id="import-dropzone" onclick="document.getElementById('import-file-input').click()">
+            <svg class="file-dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            <div class="file-dropzone-title">Click to choose or drag spreadsheet here</div>
+            <div class="file-dropzone-desc">Supports CSV, XLSX, and XLS formats (up to 10 MB)</div>
+            <input type="file" id="import-file-input" style="display: none;" accept=".csv,.xlsx,.xls" onchange="app.onImportFileChosen()">
+          </div>
+
+          <div id="import-file-selected" style="display: none;" class="file-preview-card">
+            <div>
+              <strong id="import-chosen-filename" style="font-size: 0.85rem; color: var(--text-primary);">contacts.csv</strong>
+              <div id="import-chosen-filesize" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.1rem;">0 KB</div>
+            </div>
+            <button class="btn btn-subtle btn-sm" onclick="document.getElementById('import-file-input').click()">Change</button>
+          </div>
+
+          <div style="margin-top: 1rem; display: flex; justify-content: flex-end;">
+            <button class="btn btn-primary btn-sm" id="btn-analyze-file" onclick="app.previewImportFile()">Analyze Spreadsheet</button>
+          </div>
+        </div>
+
+        <div id="import-step-map" style="display: none;">
+          <input type="hidden" id="import-temp-file-id">
+
+          <!-- Import Preview Audit Stats -->
+          <div id="import-audit-summary-box" style="margin-bottom: 1rem; padding: 0.75rem; background: var(--surface-bg); border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-size: 0.8125rem;">
+            <div style="font-weight: 600; margin-bottom: 0.35rem;">Spreadsheet Audit Preview</div>
+            <div id="import-audit-stats-text" style="color: var(--text-secondary); font-size: 0.75rem; margin-bottom: 0.5rem;">Loading audit details...</div>
+            <div id="import-columns-tags" style="display: flex; gap: 0.35rem; flex-wrap: wrap;"></div>
+          </div>
+
+          <!-- Sample Rows Preview Table -->
+          <div style="margin-bottom: 1rem;">
+            <div style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.35rem;">Sample Rows Preview</div>
+            <div id="import-sample-rows-container" style="max-height: 120px; overflow: auto; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--surface-bg); font-size: 0.75rem;"></div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+            <div class="form-group">
+              <label class="form-label">Audience Group</label>
+              <select class="form-select" id="import-group-select"></select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Phone Column (Required)</label>
+              <select class="form-select" id="import-phone-col"></select>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+            <div class="form-group">
+              <label class="form-label">Name Column (Optional)</label>
+              <select class="form-select" id="import-name-col"></select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Default Country Code</label>
+              <input type="text" class="form-input" id="import-country-code" placeholder="e.g. 1, 44, 91">
+            </div>
+          </div>
+
+          <!-- Consent Setting -->
+          <div style="margin-top: 0.5rem; background: var(--surface-subtle); padding: 0.65rem 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+            <label style="display: flex; align-items: flex-start; gap: 0.5rem; font-size: 0.78rem; cursor: pointer; color: var(--text-secondary); margin: 0;">
+              <input type="checkbox" id="import-consent-confirm" checked style="margin-top: 0.15rem;">
+              <span><strong>Opt-in confirmation:</strong> I confirm that all contacts in this spreadsheet have consented to receive messages.</span>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-import')">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="btn-confirm-import" style="display: none;" onclick="app.confirmImport()">Confirm & Import</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 2: Quick Paste Numbers -->
+  <div class="modal-backdrop" id="modal-paste">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">Paste Contacts</h3>
+        <button class="modal-close" onclick="app.closeModal('modal-paste')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Target Group</label>
+          <select class="form-select" id="paste-group-select"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Contacts (One per line: phone, name)</label>
+          <textarea class="form-textarea" id="paste-text-input" rows="7" placeholder="+14155552671, John Doe&#10;+447911123456, Alice Smith"></textarea>
+          <div class="form-hint">Enter international phone numbers with optional country prefix.</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-paste')">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="app.confirmPasteContacts()">Add Contacts</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 3: Add Group -->
+  <div class="modal-backdrop" id="modal-group">
+    <div class="modal-card" style="max-width: 420px;">
+      <div class="modal-header">
+        <h3 class="modal-title">New Contact Group</h3>
+        <button class="modal-close" onclick="app.closeModal('modal-group')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Group Name</label>
+          <input type="text" class="form-input" id="new-group-name" placeholder="e.g. VIP Clients, Wholesale">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description (Optional)</label>
+          <input type="text" class="form-input" id="new-group-desc" placeholder="e.g. Verified opt-in customers">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-group')">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="app.confirmCreateGroup()">Create Group</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 4: Message Version Modal -->
+  <div class="modal-backdrop" id="modal-version">
+    <div class="modal-card" style="max-width: 540px;">
+      <div class="modal-header">
+        <h3 class="modal-title" id="version-modal-title">Add Message Version</h3>
+        <button class="modal-close" onclick="app.closeModal('modal-version')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="ver-edit-id" value="">
+        <div class="form-group">
+          <label class="form-label">Version Name</label>
+          <input type="text" class="form-input" id="ver-name-input" placeholder="e.g. Spanish Version, VIP Offer">
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+          <div class="form-group">
+            <label class="form-label">Applies When</label>
+            <select class="form-select" id="ver-filter-field" onchange="app.onVersionFieldChange()">
+              <option value="language">Language equals</option>
+              <option value="tier">Customer tier equals</option>
+              <option value="city">City equals</option>
+              <option value="all">Always (Default fallback)</option>
+            </select>
+          </div>
+          <div class="form-group" id="ver-filter-val-group">
+            <label class="form-label">Required Value</label>
+            <input type="text" class="form-input" id="ver-filter-value" placeholder="e.g. es, VIP">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Message Text</label>
+          <textarea class="form-textarea" id="ver-content-input" rows="5" placeholder="Hola {name}, su recordatorio está programado..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-version')">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="app.confirmSaveVersion()">Save Version</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 5: Activity Row Detail Drawer / Modal -->
+  <div class="modal-backdrop" id="modal-activity-detail">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">Campaign Run Details</h3>
+        <button class="modal-close" onclick="app.closeModal('modal-activity-detail')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="display: flex; flex-direction: column; gap: 0.6rem; font-size: 0.8125rem;">
+          <div><strong>Campaign:</strong> <span id="act-detail-camp">--</span></div>
+          <div><strong>Status:</strong> <span class="badge badge-neutral" id="act-detail-status">--</span></div>
+          <div><strong>Progress:</strong> <span id="act-detail-counts">--</span></div>
+          <div><strong>Started:</strong> <span id="act-detail-started">--</span></div>
+          <div><strong>Completed:</strong> <span id="act-detail-completed">--</span></div>
+          <div id="act-detail-error-box" style="display: none; padding: 0.6rem; background: var(--danger-subtle); color: var(--danger); border-radius: var(--radius-sm);">
+            <strong>Error:</strong> <span id="act-detail-error"></span>
+          </div>
+        </div>
+        <div style="margin-top: 1rem; border-top: 1px solid var(--border-color); padding-top: 0.75rem;">
+          <div style="font-weight: 600; font-size: 0.8125rem; margin-bottom: 0.5rem;">Recipient Delivery Breakdown</div>
+          <div class="table-container" style="max-height: 220px;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Recipient</th>
+                  <th>Phone</th>
+                  <th>Status</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody id="act-detail-recipients-tbody">
+                <tr><td colspan="4" style="text-align: center; color: var(--text-muted);">No records found.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+        <button class="btn btn-warning btn-sm" id="btn-retry-failed-job" style="display: none;" onclick="app.retryFailedJob()">Retry Failed Recipients</button>
+        <div style="display: flex; gap: 0.4rem; margin-left: auto;">
+          <button class="btn btn-secondary btn-sm" id="btn-export-act-csv">Export CSV</button>
+          <button class="btn btn-primary btn-sm" onclick="app.closeModal('modal-activity-detail')">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 6: Select Messaging Profile (Browser & Profile Picker) -->
+  <div class="modal-backdrop" id="modal-profile-picker">
+    <div class="modal-card" style="max-width: 520px;">
+      <div class="modal-header">
+        <h3 class="modal-title">Select Messaging Profile</h3>
+        <button class="modal-close" onclick="app.closeModal('modal-profile-picker')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.8125rem; color: var(--text-secondary); margin-bottom: 1rem;">
+          Choose an installed browser and user profile to use for messaging. You can pick the isolated Dedicated WhatsApp session or select an existing browser profile already signed into WhatsApp Web.
+        </p>
+
+        <!-- Empty state when no supported browsers found -->
+        <div id="picker-empty-state" style="display: none; text-align: center; padding: 1.5rem 1rem; background: var(--surface-subtle); border: 1px solid var(--border-color); border-radius: var(--radius-sm); margin-bottom: 1rem;">
+          <div style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.75rem;">
+            No browser profiles were found. You can create a dedicated local session and sign in with QR code.
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="app.createDedicatedFromEmpty()">Create Dedicated Session</button>
+        </div>
+
+        <!-- Discovered Browsers Container -->
+        <div id="picker-discovered-container">
+          <!-- 1. Browser Select -->
+          <div class="form-group">
+            <label class="form-label">Installed Browser</label>
+            <select class="form-select" id="picker-browser-select" onchange="app.onPickerBrowserChange()">
+              <!-- Populated dynamically -->
+            </select>
+          </div>
+
+          <!-- 2. Profile Select -->
+          <div class="form-group">
+            <label class="form-label">Browser Profile</label>
+            <select class="form-select" id="picker-profile-select" onchange="app.onPickerProfileChange()">
+              <!-- Populated dynamically -->
+            </select>
+            <div class="form-hint" id="picker-profile-hint">Dedicated session keeps WhatsApp data completely isolated.</div>
+          </div>
+
+          <!-- Profile Details Card (shortened path, availability) -->
+          <div id="picker-profile-detail-card" style="margin-top: 0.75rem; padding: 0.75rem; background: var(--surface-subtle); border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-size: 0.78rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+              <span style="font-weight: 600; color: var(--text-primary);" id="picker-detail-name">Dedicated WhatsApp Session</span>
+              <span class="badge badge-success" id="picker-detail-avail">Available</span>
+            </div>
+            <div style="color: var(--text-muted); font-size: 0.72rem; word-break: break-all;" id="picker-detail-path">whatsapp_browser_session</div>
+            <div id="picker-detail-locked-note" style="display: none; color: var(--danger); font-size: 0.72rem; margin-top: 0.35rem;">
+              This profile is currently open in another window. You can select it, but you will need to close that browser window before dispatching messages.
+            </div>
+          </div>
+
+          <!-- 3. Explicit Confirmation Checkbox -->
+          <div style="margin-top: 1rem; padding: 0.75rem; background: var(--surface-bg); border: 1px solid var(--border-color); border-radius: var(--radius-sm);">
+            <label style="display: flex; align-items: flex-start; gap: 0.5rem; cursor: pointer; font-size: 0.8125rem; user-select: none;">
+              <input type="checkbox" id="picker-owner-confirm" onchange="app.onPickerConfirmChange()" style="margin-top: 0.15rem;">
+              <span>
+                <strong>I confirm that I own this browser profile and WhatsApp account.</strong><br>
+                <span style="color: var(--text-muted); font-size: 0.75rem;">
+                  Automation runs entirely on your local machine. Personal data (passwords, cookies, history) is never extracted, decrypted, or uploaded.
+                </span>
+              </span>
+            </label>
+          </div>
+
+          <!-- 4. Profile Persistence Options -->
+          <div style="margin-top: 0.75rem; padding: 0.65rem 0.75rem; background: var(--surface-subtle); border: 1px solid var(--border-color); border-radius: var(--radius-sm); display: flex; flex-direction: column; gap: 0.4rem;">
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.8125rem; user-select: none;">
+              <input type="checkbox" id="picker-remember-profile" checked>
+              <span><strong>Remember my browser profile</strong> <span style="color: var(--text-muted); font-size: 0.75rem;">(keeps it selected on next launch)</span></span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.8125rem; user-select: none;">
+              <input type="checkbox" id="picker-auto-connect">
+              <span><strong>Automatically reconnect to this profile on startup</strong></span>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-profile-picker')">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="btn-save-profile-selection" disabled onclick="app.saveProfileSelection()">Save & Apply Profile</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 7: Send Test Message -->
+  <div class="modal-backdrop" id="modal-test-send">
+    <div class="modal-card" style="max-width: 450px;">
+      <div class="modal-header">
+        <h3 class="modal-title">Send Test Message</h3>
+        <button class="modal-close" onclick="app.closeModal('modal-test-send')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.8125rem; color: var(--text-secondary); margin-bottom: 0.75rem;">
+          Dispatch a single test message to your own verified number to preview delivery formatting before broadcasting.
+        </p>
+        <div class="form-group">
+          <label class="form-label">Recipient Phone Number (with Country Code)</label>
+          <input type="text" class="form-input" id="test-send-phone" placeholder="e.g. +14155552671">
+          <div class="form-hint">Enter digits with international country code.</div>
+        </div>
+        <!-- Media Attachment Info in Test-Send -->
+        <div id="test-send-media-box" style="display: none; margin-bottom: 0.85rem; padding: 0.5rem 0.75rem; background: var(--surface-subtle); border: 1px solid var(--border-color); border-radius: var(--radius-sm); align-items: center; gap: 0.75rem;">
+          <div style="width: 38px; height: 38px; border-radius: var(--radius-xs); overflow: hidden; background: var(--surface-bg); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; flex-shrink: 0;" id="test-send-media-thumb">
+            <img id="test-send-media-img" src="" alt="Thumbnail" style="width: 100%; height: 100%; object-fit: cover; display: none;">
+            <span id="test-send-media-icon" style="font-size: 1.1rem;">📎</span>
+          </div>
+          <div style="flex: 1; min-width: 0;">
+            <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="test-send-media-title">image.png</div>
+            <div style="font-size: 0.72rem; color: var(--text-muted);" id="test-send-media-meta">Attached · Dispatched with caption</div>
+          </div>
+          <span class="badge badge-success" style="font-size: 0.68rem;">Attached</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Message Preview</label>
+          <div id="test-send-message-preview" style="font-size: 0.8125rem; background: var(--surface-bg); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.5rem 0.75rem; max-height: 120px; overflow-y: auto; white-space: pre-wrap;"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-test-send')">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="btn-confirm-test-send" onclick="app.confirmTestSend()">
+          <span id="test-send-spinner" style="display: none; margin-right: 4px;">⟳</span> Send Test
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 8: Per-Recipient Queue Item Inspection Drawer -->
+  <div class="modal-backdrop" id="modal-job-drawer">
+    <div class="modal-card" style="max-width: 820px;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title" id="drawer-job-title">Campaign Recipients & Queue Status</h3>
+          <div style="font-size: 0.75rem; color: var(--text-muted);" id="drawer-job-subtitle">Detailed recipient checkpoints, message variants, and error reasons</div>
+        </div>
+        <button class="modal-close" onclick="app.closeModal('modal-job-drawer')">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 0;">
+        <div class="table-container" style="max-height: 420px; overflow-y: auto;">
+          <table class="table" style="margin-bottom: 0;">
+            <thead>
+              <tr>
+                <th>Recipient</th>
+                <th>Phone</th>
+                <th>Message Content</th>
+                <th>Status</th>
+                <th>Retries</th>
+                <th>Result / Details</th>
+              </tr>
+            </thead>
+            <tbody id="drawer-recipients-body">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-job-drawer')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 9: Connection Diagnostic Details -->
+  <div class="modal-backdrop" id="modal-connection-details">
+    <div class="modal-card" style="max-width: 520px;">
+      <div class="modal-header">
+        <h3 class="modal-title">Connection Diagnostic Details</h3>
+        <button class="modal-close" onclick="app.closeModal('modal-connection-details')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.8125rem; color: var(--text-secondary); margin-bottom: 1rem;">
+          Verified system state and non-destructive diagnostic results for the selected messaging connection.
+        </p>
+
+        <div style="background-color: var(--surface-subtle); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.85rem; margin-bottom: 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+            <span style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Diagnosis Condition</span>
+            <span class="badge badge-neutral" id="diag-condition-badge">AVAILABLE</span>
+          </div>
+          <div id="diag-safe-reason" style="font-size: 0.8125rem; color: var(--text-primary); font-weight: 500; line-height: 1.4;">
+            No errors detected.
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; font-size: 0.75rem; margin-bottom: 1rem;">
+          <div>
+            <div style="color: var(--text-muted); margin-bottom: 0.2rem;">Target Browser</div>
+            <div id="diag-browser-name" style="font-weight: 600; color: var(--text-primary);">Google Chrome</div>
+          </div>
+          <div>
+            <div style="color: var(--text-muted); margin-bottom: 0.2rem;">Browser Binary</div>
+            <div id="diag-exe-status" style="font-weight: 600; color: var(--text-primary);">Found on disk</div>
+          </div>
+          <div>
+            <div style="color: var(--text-muted); margin-bottom: 0.2rem;">Active Process (PID)</div>
+            <div id="diag-pids" style="font-weight: 600; color: var(--text-primary);">None</div>
+          </div>
+          <div>
+            <div style="color: var(--text-muted); margin-bottom: 0.2rem;">Window Visibility</div>
+            <div id="diag-window-vis" style="font-weight: 600; color: var(--text-primary);">No visible window</div>
+          </div>
+        </div>
+
+        <div>
+          <div style="color: var(--text-muted); font-size: 0.75rem; margin-bottom: 0.25rem;">Configured Profile Path</div>
+          <code id="diag-profile-path" style="display: block; font-size: 0.75rem; background: var(--surface-subtle); padding: 0.4rem 0.6rem; border-radius: var(--radius-xs); border: 1px solid var(--border-color); word-break: break-all;">
+            ~/.config/google-chrome/Default
+          </code>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-connection-details')">Close</button>
+        <button class="btn btn-primary btn-sm" onclick="app.closeModal('modal-connection-details'); app.executeConnectionAction('use_dedicated', 'Use dedicated session');">Use Dedicated Session</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 10: Edit Contact -->
+  <div class="modal-backdrop" id="modal-edit-contact">
+    <div class="modal-card" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3 class="modal-title" id="edit-contact-modal-title">Edit Contact</h3>
+        <button class="modal-close" onclick="app.closeModal('modal-edit-contact')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="edit-contact-id" value="">
+        <div class="form-group">
+          <label class="form-label">Full Name</label>
+          <input type="text" class="form-input" id="edit-contact-name" placeholder="Contact name">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Phone Number (with Country Code digits)</label>
+          <input type="text" class="form-input" id="edit-contact-phone" placeholder="e.g. 14155552671">
+          <div class="form-hint">E.164 digits without spaces or symbols.</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Audience Group</label>
+          <select class="form-select" id="edit-contact-group">
+            <!-- Populated dynamically -->
+          </select>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+          <div class="form-group">
+            <label class="form-label">Customer Tier</label>
+            <select class="form-select" id="edit-contact-tier">
+              <option value="Regular">Regular</option>
+              <option value="VIP">VIP</option>
+              <option value="Enterprise">Enterprise</option>
+              <option value="Partner">Partner</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Language</label>
+            <select class="form-select" id="edit-contact-lang">
+              <option value="en">English (en)</option>
+              <option value="es">Spanish (es)</option>
+              <option value="fr">French (fr)</option>
+              <option value="de">German (de)</option>
+              <option value="it">Italian (it)</option>
+              <option value="pt">Portuguese (pt)</option>
+              <option value="ar">Arabic (ar)</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Consent Status</label>
+          <select class="form-select" id="edit-contact-consent" onchange="app.onEditConsentChange()">
+            <option value="opted_in">Opted-In (Subscribed)</option>
+            <option value="opted_out">Opted-Out (Suppressed)</option>
+          </select>
+        </div>
+        <!-- Override confirmation box when transitioning from opted_out to opted_in -->
+        <div id="edit-contact-override-box" style="display: none; background: var(--warning-subtle); border: 1px solid var(--warning); border-radius: var(--radius-sm); padding: 0.75rem; margin-bottom: 1rem;">
+          <label style="display: flex; align-items: flex-start; gap: 0.5rem; cursor: pointer; font-size: 0.8125rem;">
+            <input type="checkbox" id="edit-contact-consent-override" style="margin-top: 0.15rem;">
+            <span>
+              <strong>Explicit Consent Override Required</strong><br>
+              <span style="color: var(--text-secondary); font-size: 0.75rem;">
+                This recipient was previously opted out. Check here to confirm you have documented permission to resume messages.
+              </span>
+            </span>
+          </label>
+        </div>
+        <div class="form-group" id="edit-contact-optout-reason-group" style="display: none;">
+          <label class="form-label">Opt-Out Reason</label>
+          <input type="text" class="form-input" id="edit-contact-optout-reason" placeholder="e.g. Unsubscribe requested">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Custom Fields (JSON format)</label>
+          <textarea class="form-textarea" id="edit-contact-custom-fields" rows="3" placeholder='{"company": "Acme Corp", "order_id": "1049"}'></textarea>
+          <div class="form-hint">JSON attributes accessible via template variables.</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-edit-contact')">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="btn-save-contact-edit" onclick="app.saveContactEdit()">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 11: Manage Contact Groups -->
+  <div class="modal-backdrop" id="modal-manage-groups">
+    <div class="modal-card" style="max-width: 580px;">
+      <div class="modal-header">
+        <h3 class="modal-title">Manage Audience Groups</h3>
+        <button class="modal-close" onclick="app.closeModal('modal-manage-groups')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.8125rem; color: var(--text-secondary); margin-bottom: 0.85rem;">
+          Organize contacts into distinct audience groups. Contacts are safely preserved and migrated if a group is deleted.
+        </p>
+
+        <!-- Inline Create Group -->
+        <div style="display: flex; gap: 0.5rem; margin-bottom: 1.25rem;">
+          <input type="text" class="form-input" id="mg-new-group-name" placeholder="New group name...">
+          <button type="button" class="btn btn-primary btn-sm" onclick="app.createGroupFromManage()">Create Group</button>
+        </div>
+
+        <!-- Groups Table -->
+        <div class="table-container" style="max-height: 250px; overflow-y: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Group Name</th>
+                <th>Contacts</th>
+                <th style="text-align: right;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="manage-groups-table-body">
+              <!-- Populated dynamically -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Inline Rename Group Panel -->
+        <div id="mg-rename-box" style="display: none; margin-top: 1rem; padding: 0.75rem; background: var(--surface-subtle); border: 1px solid var(--border-color); border-radius: var(--radius-sm);">
+          <input type="hidden" id="mg-rename-old-name" value="">
+          <label class="form-label" id="mg-rename-label">Rename Group</label>
+          <div style="display: flex; gap: 0.5rem;">
+            <input type="text" class="form-input" id="mg-rename-new-name" placeholder="Enter new name...">
+            <button type="button" class="btn btn-primary btn-sm" onclick="app.confirmRenameGroup()">Save</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('mg-rename-box').style.display='none'">Cancel</button>
+          </div>
+        </div>
+
+        <!-- Inline Delete Group Panel with Fallback Migration -->
+        <div id="mg-delete-box" style="display: none; margin-top: 1rem; padding: 0.75rem; background: var(--danger-subtle); border: 1px solid var(--danger); border-radius: var(--radius-sm);">
+          <input type="hidden" id="mg-delete-target-group" value="">
+          <div style="font-weight: 600; color: var(--danger); font-size: 0.825rem; margin-bottom: 0.25rem;" id="mg-delete-title">Delete Group</div>
+          <p style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
+            Contacts in this group will not be deleted. Choose a fallback group to migrate them to:
+          </p>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <select class="form-select" id="mg-delete-fallback-select" style="flex: 1; font-size: 0.8125rem;">
+              <!-- Groups populated -->
+            </select>
+            <button type="button" class="btn btn-danger btn-sm" onclick="app.confirmDeleteGroupWithMigration()">Delete & Migrate</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('mg-delete-box').style.display='none'">Cancel</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-manage-groups')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 12: Durable Media Library -->
+  <div class="modal-backdrop" id="modal-media-library">
+    <div class="modal-card" style="max-width: 820px;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title">Durable Media Library</h3>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">Manage media assets stored on disk, inspect usage across campaigns, and attach to drafts</div>
+        </div>
+        <button class="modal-close" onclick="app.closeModal('modal-media-library')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+          <span style="font-size: 0.8125rem; color: var(--text-secondary);" id="media-library-count-label">0 assets stored</span>
+          <div>
+            <input type="file" id="media-library-upload-input" class="visually-hidden" accept="image/png,image/jpeg,image/webp,application/pdf,video/mp4" onchange="app.onLibraryUploadSelected(event)">
+            <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('media-library-upload-input').click()">+ Upload New Asset</button>
+          </div>
+        </div>
+
+        <div id="media-library-body" style="max-height: 440px; overflow-y: auto;">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-media-library')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 13: Confirm Personal Browser Restart -->
+  <div class="modal-backdrop" id="modal-confirm-browser-restart">
+    <div class="modal-card" style="max-width: 520px;">
+      <div class="modal-header">
+        <h3 class="modal-title" style="display: flex; align-items: center; gap: 0.5rem;">
+          <span style="color: var(--warning); font-size: 1.25rem;">⚠️</span>
+          Restart Open Browser Window?
+        </h3>
+        <button class="modal-close" onclick="app.closeModal('modal-confirm-browser-restart')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="background: var(--warning-subtle); border: 1px solid var(--warning); border-radius: var(--radius-sm); padding: 0.85rem; margin-bottom: 1rem;">
+          <div style="font-weight: 600; color: var(--text-primary); font-size: 0.875rem; margin-bottom: 0.35rem;">
+            Personal Browser Window Open
+          </div>
+          <div style="font-size: 0.8125rem; color: var(--text-secondary); line-height: 1.45;">
+            The selected browser profile is currently open in an active browser window. To establish an automated messaging session, Relay can gracefully close this window.
+          </div>
+        </div>
+        <p style="font-size: 0.8125rem; color: var(--text-secondary); margin-bottom: 0.75rem;">
+          <strong>Warning:</strong> Closing the browser will close open tabs. Please ensure your unsaved work in that window is saved before confirming.
+        </p>
+        <p style="font-size: 0.8125rem; color: var(--text-muted); margin-bottom: 0;">
+          Alternatively, you can switch to a <strong>Dedicated Relay Session</strong> which runs in complete isolation and never touches your personal browser.
+        </p>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+        <button class="btn btn-secondary btn-sm" onclick="app.rejectPersonalRestartAndUseDedicated()">Use Dedicated Session</button>
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-subtle btn-sm" onclick="app.closeModal('modal-confirm-browser-restart')">Cancel</button>
+          <button class="btn btn-primary btn-sm" id="btn-confirm-browser-restart" onclick="app.confirmPersonalBrowserRestart()">Confirm & Close Window</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 14: Add Single Contact -->
+  <div class="modal-backdrop" id="modal-add-contact">
+    <div class="modal-card" style="max-width: 460px;">
+      <div class="modal-header">
+        <h3 class="modal-title">+ Add New Contact</h3>
+        <button class="modal-close" onclick="app.closeModal('modal-add-contact')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Contact Name</label>
+          <input type="text" class="form-input" id="new-contact-name" placeholder="e.g. Gaurav Patel">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Phone Number (with Country Code)</label>
+          <input type="text" class="form-input" id="new-contact-phone" placeholder="e.g. +91 76009 58393">
+          <div class="form-hint">E.164 format with country digits.</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Audience Group</label>
+          <select class="form-select" id="new-contact-group">
+            <!-- Dynamically populated -->
+          </select>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+          <div class="form-group">
+            <label class="form-label">Customer Tier</label>
+            <select class="form-select" id="new-contact-tier">
+              <option value="Regular">Regular</option>
+              <option value="VIP">VIP</option>
+              <option value="Enterprise">Enterprise</option>
+              <option value="Partner">Partner</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Language</label>
+            <select class="form-select" id="new-contact-lang">
+              <option value="en">English (en)</option>
+              <option value="es">Spanish (es)</option>
+              <option value="hi">Hindi (hi)</option>
+              <option value="fr">French (fr)</option>
+              <option value="de">German (de)</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group" style="margin-top: 0.25rem;">
+          <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem; cursor: pointer;">
+            <input type="checkbox" id="new-contact-deduplicate" checked>
+            <span>Prevent duplicates (Reject if number already exists)</span>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-add-contact')">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="app.confirmAddSingleContact()">Save Contact</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 15: Review & Remove Test / Demo Records -->
+  <div class="modal-backdrop" id="modal-demo-records">
+    <div class="modal-card" style="max-width: 680px;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title">Identified Test Fixture Records</h3>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">Synthetic records created by test runs. Real contacts like Gaurav or Me are strictly preserved.</div>
+        </div>
+        <button class="modal-close" onclick="app.closeModal('modal-demo-records')">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 0;">
+        <div class="table-container" style="max-height: 320px; overflow-y: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Phone</th>
+                <th>Group</th>
+                <th>Reason Identified</th>
+              </tr>
+            </thead>
+            <tbody id="demo-records-table-body">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-size: 0.75rem; color: var(--text-secondary);" id="demo-modal-status-text">Ready to safely clean test records</span>
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-demo-records')">Cancel</button>
+          <button class="btn btn-danger btn-sm" id="btn-confirm-delete-demos" onclick="app.confirmDeleteDemoRecords()">Remove Identified Demo Records</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 16: Review & Merge Duplicate Contacts -->
+  <div class="modal-backdrop" id="modal-merge-duplicates">
+    <div class="modal-card" style="max-width: 720px;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title">Duplicate Phone Number Clusters</h3>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">Merge duplicate entries into a single primary record without losing data.</div>
+        </div>
+        <button class="modal-close" onclick="app.closeModal('modal-merge-duplicates')">&times;</button>
+      </div>
+      <div class="modal-body" style="max-height: 400px; overflow-y: auto;" id="merge-duplicates-body">
+        <!-- Dynamically populated duplicate clusters -->
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-merge-duplicates')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 17: Content Collection Editor -->
+  <div class="modal-backdrop" id="modal-collection-editor">
+    <div class="modal-card" style="max-width: 680px;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title" id="col-editor-title">Content Collection</h3>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">Group messages and media assets into reusable campaign pairing combinations</div>
+        </div>
+        <button class="modal-close" onclick="app.closeModal('modal-collection-editor')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="col-editor-id" value="">
+        <div class="form-group">
+          <label class="form-label">Collection Name</label>
+          <input type="text" class="form-input" id="col-editor-name" placeholder="e.g. November Offers">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description</label>
+          <input type="text" class="form-input" id="col-editor-desc" placeholder="e.g. Seasonal promotion assets and brochures">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Message-Media Pairing Mode</label>
+          <select class="form-select" id="col-editor-mode">
+            <option value="fixed_pair">Fixed Pair (One selected message and media per recipient)</option>
+            <option value="approved_combinations">Approved Combinations (Explicitly defined valid message-media pairs)</option>
+            <option value="balanced_testing">Balanced Rotation (Equally rotated approved pairs across recipients)</option>
+          </select>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
+          <div>
+            <label class="form-label">Included Messages</label>
+            <div id="col-editor-messages-list" style="max-height: 180px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.5rem; background: var(--surface-subtle);">
+              <!-- Checkboxes populated dynamically -->
+            </div>
+          </div>
+          <div>
+            <label class="form-label">Included Media Assets</label>
+            <div id="col-editor-media-list" style="max-height: 180px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.5rem; background: var(--surface-subtle);">
+              <!-- Checkboxes populated dynamically -->
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-collection-editor')">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="app.saveCollectionFromEditor()">Save Collection</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 18: Searchable Variables & Shortcuts Help Modal -->
+  <div class="modal-backdrop" id="modal-variables-help">
+    <div class="modal-card" style="max-width: 680px;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title">Variables & Template Syntax Guide</h3>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">Personalize outgoing messages dynamically and safely with recipient tags and spintax</div>
+        </div>
+        <button class="modal-close" onclick="app.closeModal('modal-variables-help')">&times;</button>
+      </div>
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 1rem; max-height: 520px; overflow-y: auto;">
+        <!-- Search filter -->
+        <div>
+          <input type="text" id="var-help-search-input" class="form-input" placeholder="Search variables (e.g. name, phone, tier, custom)..." oninput="app.filterVariablesHelp(this.value)">
+        </div>
+
+        <!-- Dynamic Personalization Variables -->
+        <div>
+          <div style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.5rem; letter-spacing: 0.05em;">Supported Contact Variables</div>
+          <div id="var-help-list" style="display: flex; flex-direction: column; gap: 0.5rem;">
+            <!-- Rendered dynamically and seeded -->
+          </div>
+        </div>
+
+        <!-- Spintax Guide -->
+        <div style="background: var(--surface-subtle); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.75rem;">
+          <div style="font-size: 0.8125rem; font-weight: 600; color: var(--text-primary); margin-bottom: 0.25rem;">Spintax Word Randomization</div>
+          <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
+            Use curly brackets with pipes to randomize wording per contact and protect sender reputation:
+          </div>
+          <div style="background: var(--bg-surface); padding: 0.4rem 0.6rem; border-radius: var(--radius-xs); font-family: var(--font-mono); font-size: 0.75rem; color: var(--primary); border: 1px dashed var(--border-color); margin-bottom: 0.4rem;">
+            {Hello|Hi|Greetings} {first_name}, {hope you have a great day|wishing you the best}!
+          </div>
+          <div style="font-size: 0.72rem; color: var(--text-muted);">
+            Each recipient receives one random variation chosen independently.
+          </div>
+        </div>
+
+        <!-- Fallbacks Guide -->
+        <div style="background: var(--surface-subtle); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.75rem;">
+          <div style="font-size: 0.8125rem; font-weight: 600; color: var(--text-primary); margin-bottom: 0.25rem;">Default / Fallback Values</div>
+          <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
+            Provide fallback values if an optional contact attribute is blank:
+          </div>
+          <div style="background: var(--bg-surface); padding: 0.4rem 0.6rem; border-radius: var(--radius-xs); font-family: var(--font-mono); font-size: 0.75rem; color: var(--primary); border: 1px dashed var(--border-color); margin-bottom: 0.4rem;">
+            Hello {name|there}, your {tier|VIP} member status is active.
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-variables-help')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 19: Content Set Editor (Create / Rename Set) -->
+  <div class="modal-backdrop" id="modal-set-editor">
+    <div class="modal-card" style="max-width: 520px;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title" id="set-editor-title">New Content Set</h3>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">Configure reusable group of campaign messages or media</div>
+        </div>
+        <button class="modal-close" onclick="app.closeModal('modal-set-editor')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="set-editor-id" value="">
+        <input type="hidden" id="set-editor-type" value="text">
+        <div class="form-group">
+          <label class="form-label">Set Name</label>
+          <input type="text" class="form-input" id="set-editor-name" placeholder="e.g. November Offer Variations, Hero Banners">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description (Optional)</label>
+          <input type="text" class="form-input" id="set-editor-desc" placeholder="e.g. Approved copy for seasonal outreach">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Recipient Allocation Mode</label>
+          <select class="form-select" id="set-editor-mode">
+            <option value="random">Random with replacement (Uniform per contact)</option>
+            <option value="balanced">Balanced rotation (Even round-robin)</option>
+            <option value="sequential">Sequential (Order-preserved)</option>
+          </select>
+          <div class="form-hint">Controls how items are assigned across campaign recipients.</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-set-editor')">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="app.saveSetFromEditor()">Save Set</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 20: Import Text Set Modal -->
+  <div class="modal-backdrop" id="modal-import-text-set">
+    <div class="modal-card" style="max-width: 620px;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title">Import Messages into Text Set</h3>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">Import messages from CSV, JSON, or plain text with automated syntax validation</div>
+        </div>
+        <button class="modal-close" onclick="app.closeModal('modal-import-text-set')">&times;</button>
+      </div>
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 0.85rem;">
+        <div class="form-group">
+          <label class="form-label">Target Text Set</label>
+          <select class="form-select" id="import-text-target-set">
+            <!-- Populated dynamically -->
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Upload File (CSV, JSON, or TXT)</label>
+          <input type="file" id="import-text-file-input" class="form-input" accept=".csv,.json,.txt" onchange="app.onImportFileChosen(event)">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Or Paste Message Content Below</label>
+          <textarea id="import-text-paste" class="form-textarea" rows="5" placeholder="Paste messages here... For plain text, one message per line or separated by empty lines. For JSON: [{'title': '...', 'content': '...'}]" oninput="app.validateImportSyntax()"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Format</label>
+          <select class="form-select" id="import-text-format" onchange="app.validateImportSyntax()">
+            <option value="auto">Auto-Detect</option>
+            <option value="csv">CSV (Headers: title, content)</option>
+            <option value="json">JSON Array</option>
+            <option value="txt">Plain Text (One per line)</option>
+          </select>
+        </div>
+        <!-- Syntax Validation Feedback Box -->
+        <div id="import-validation-box" style="display: none; padding: 0.65rem 0.85rem; border-radius: var(--radius-sm); font-size: 0.78rem; border: 1px solid var(--border-color); background: var(--surface-subtle);">
+          <!-- Dynamically populated with parsed item count and variable syntax findings -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-import-text-set')">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="btn-confirm-import-set" onclick="app.submitImportTextSet()">Import Messages</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 21: Add Media from Library to Set -->
+  <div class="modal-backdrop" id="modal-add-media-to-set">
+    <div class="modal-card" style="max-width: 680px;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title">Add Assets to Media Set</h3>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">Select existing assets from your Media Library to include in this set</div>
+        </div>
+        <button class="modal-close" onclick="app.closeModal('modal-add-media-to-set')">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 0;">
+        <div id="add-media-picker-list" style="max-height: 380px; overflow-y: auto; padding: 0.75rem;">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+        <span id="add-media-picker-selected-count" style="font-size: 0.78rem; color: var(--text-secondary);">0 selected</span>
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-add-media-to-set')">Cancel</button>
+          <button class="btn btn-primary btn-sm" onclick="app.confirmAddMediaToSet()">+ Add Selected to Set</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 22: Add Templates from Library to Set -->
+  <div class="modal-backdrop" id="modal-add-templates-to-set">
+    <div class="modal-card" style="max-width: 680px;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title">Add Saved Messages to Text Set</h3>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">Select saved templates from your library to include in this text set</div>
+        </div>
+        <button class="modal-close" onclick="app.closeModal('modal-add-templates-to-set')">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 0;">
+        <div id="add-templates-picker-list" style="max-height: 380px; overflow-y: auto; padding: 0.75rem;">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+        <span id="add-templates-picker-selected-count" style="font-size: 0.78rem; color: var(--text-secondary);">0 selected</span>
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-add-templates-to-set')">Cancel</button>
+          <button class="btn btn-primary btn-sm" onclick="app.confirmAddTemplatesToSet()">+ Add Selected to Set</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 23: Live Message Personalization Preview -->
+  <div class="modal-backdrop" id="modal-preview-text-item">
+    <div class="modal-card" style="max-width: 580px;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title" id="preview-text-item-title">Message Personalization Preview</h3>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">Verify dynamic variables against real recipient data before campaign launch</div>
+        </div>
+        <button class="modal-close" onclick="app.closeModal('modal-preview-text-item')">&times;</button>
+      </div>
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 0.85rem;">
+        <div class="form-group">
+          <label class="form-label">Simulate with Recipient</label>
+          <select class="form-select" id="preview-recipient-select" onchange="app.renderLiveTextItemPreview()">
+            <!-- Populated dynamically with actual contacts -->
+          </select>
+        </div>
+        <div>
+          <label class="form-label">Interpolated WhatsApp Web Output</label>
+          <div style="background: var(--surface-subtle); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 1rem;">
+            <div style="background: #dcf8c6; color: #111; padding: 0.65rem 0.85rem; border-radius: 7.5px; font-size: 0.875rem; line-height: 1.45; box-shadow: 0 1px 1px rgba(0,0,0,0.1); max-width: 85%;" id="preview-interpolated-bubble">
+              <!-- Rendered preview text -->
+            </div>
+          </div>
+        </div>
+        <div>
+          <label class="form-label">Raw Template Syntax</label>
+          <div id="preview-raw-template-box" style="font-family: var(--font-mono); font-size: 0.75rem; padding: 0.5rem; background: var(--bg-surface); border: 1px dashed var(--border-color); border-radius: var(--radius-xs); color: var(--text-secondary); word-break: break-all;">
+            <!-- Raw text -->
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-preview-text-item')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 24: Move / Copy Set Items Modal -->
+  <div class="modal-backdrop" id="modal-move-copy-set-items">
+    <div class="modal-card" style="max-width: 480px;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title" id="move-copy-modal-title">Move Items</h3>
+          <div style="font-size: 0.75rem; color: var(--text-muted);" id="move-copy-modal-sub">Transfer selected items between sets</div>
+        </div>
+        <button class="modal-close" onclick="app.closeModal('modal-move-copy-set-items')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="move-copy-action-type" value="move">
+        <input type="hidden" id="move-copy-set-type" value="text">
+        <div class="form-group">
+          <label class="form-label">Select Destination Set</label>
+          <select class="form-select" id="move-copy-target-set-select">
+            <!-- Populated dynamically -->
+          </select>
+        </div>
+        <div style="font-size: 0.78rem; color: var(--text-muted);" id="move-copy-info-text">
+          <!-- Text -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-move-copy-set-items')">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="btn-confirm-move-copy" onclick="app.confirmMoveCopySetItems()">Transfer Items</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Shelf -->
+  <div class="toast-shelf" id="toast-shelf"></div>
+
+  <!-- App Script -->
+  <script src="/static/app.js?v=20261105_0332"></script>
+</body>
+</html>

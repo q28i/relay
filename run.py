@@ -1,7 +1,8 @@
 """
 WhatsApp Automated Bulk Sender
 Launches the Desktop GUI by default, or runs in headless/CLI mode when requested.
-Includes device auditing, developer role detection, and auto-updater hooks.
+Includes device auditing, developer role detection, auto-updater hooks, pre-flight validation,
+and dry-run simulation capabilities.
 """
 
 import os
@@ -16,30 +17,24 @@ from data_loader import DataLoader
 from whatsapp_engine import WhatsAppEngine
 from device_manager import DeviceManager
 from updater import Updater
+from config_manager import ConfigManager, AppConfig, BUILTIN_PRESETS
+from validator import PreFlightValidator, DryRunEngine
+from logger import get_logger, mask_phone
+
+logger = get_logger("Runner")
 
 CONFIG_FILE = "config.json"
 
 
 def load_config() -> dict:
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    cfg_path = os.path.join(base_dir, CONFIG_FILE)
-    if os.path.isfile(cfg_path):
-        try:
-            with open(cfg_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
+    """Loads application configuration as a dictionary for backward compatibility."""
+    return ConfigManager.load().to_dict()
 
 
 def save_config(cfg: dict):
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    cfg_path = os.path.join(base_dir, CONFIG_FILE)
-    try:
-        with open(cfg_path, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, indent=4)
-    except Exception as e:
-        print(f"[WARNING] Could not save config.json: {e}")
+    """Saves dictionary configuration through the validated ConfigManager."""
+    app_cfg = AppConfig.from_dict(cfg)
+    ConfigManager.save(app_cfg)
 
 
 # Set UTF-8 encoding on Windows console if possible
@@ -49,6 +44,7 @@ if sys.platform == "win32":
         sys.stderr.reconfigure(encoding="utf-8")
     except Exception:
         pass
+
 
 def print_banner():
     version = Updater.get_current_version()
@@ -62,43 +58,82 @@ def print_banner():
     print("=" * 64)
 
 
-def run_batch_job(cfg: dict, headless: bool = False):
+def run_batch_job(cfg: dict, headless: bool = False, dry_run: bool = False, dedupe: bool = False):
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    data_path = cfg.get("data_file", "")
+    app_cfg = AppConfig.from_dict(cfg)
+    data_path = app_cfg.data_file
     if not os.path.isabs(data_path):
         data_path = os.path.join(base_dir, data_path)
 
     print("\n" + "=" * 60)
     print("STARTING WHATSAPP BULK DISPATCH (CLI / AUTOMATED MODE)")
-    print(f"Browser   : {cfg.get('browser', 'chrome').title()}")
-    print(f"Profile   : {cfg.get('profile', {}).get('name', 'Default')}")
+    print(f"Browser   : {app_cfg.browser.title()}")
+    print(f"Profile   : {cfg.get('profile', {}).get('name', 'Dedicated Profile')}")
     print(f"Data File : {os.path.basename(data_path)}")
+    print(f"Preset    : {app_cfg.active_preset.title()}")
     print("=" * 60)
 
     try:
         contacts = DataLoader.load_contacts(
             file_path=data_path,
-            default_message=cfg.get("default_message", "Hello {name}"),
-            default_country_code=cfg.get("default_country_code", "")
+            default_message=app_cfg.default_message,
+            default_country_code=app_cfg.default_country_code
         )
     except Exception as e:
+        logger.error(f"Failed to load contacts: {e}")
         print(f"[ERROR] Failed to load contacts: {e}")
         return
 
     if not contacts:
+        logger.warning("No valid contacts found in file.")
         print("[WARNING] No valid contacts found in file.")
         return
 
-    print(f"[OK] Successfully loaded {len(contacts)} contacts from {os.path.basename(data_path)}.")
+    # Pre-Flight Validation Audit
+    report = PreFlightValidator.audit_contacts(contacts, app_cfg)
+    print("\n" + report.summary())
+
+    if dedupe and report.duplicate_count > 0:
+        contacts, removed = PreFlightValidator.deduplicate_contacts(contacts)
+        print(f"[INFO] Automatically removed {removed} duplicate contacts.")
+
+    # Dry-Run Mode Simulation
+    if dry_run:
+        print("\n" + "=" * 60)
+        print("EXECUTING DRY-RUN SIMULATION (NO BROWSER OR NETWORK CALLS)")
+        print("=" * 60)
+        sim = DryRunEngine.simulate_campaign(contacts, app_cfg, sample_size=5)
+        print(f"Total Targets    : {sim['total_recipients']}")
+        print(f"Estimated Time   : ~{sim['estimated_duration_minutes']:.1f} minutes")
+        print("\nSample Generated Messages:")
+        for sm in sim["sample_messages"]:
+            print(f"  [{sm['index']}] {sm['name']} (+{sm['phone_masked']}):")
+            print(f"      \"{sm['simulated_message']}\"")
+            if sm["attachment"]:
+                print(f"      Attachment: {os.path.basename(sm['attachment'])}")
+        print("\n[OK] Dry-run simulation completed successfully.")
+        return
+
+    if not report.is_ready_to_send:
+        print("[ERROR] Contact list is not ready for dispatch. Please resolve errors listed above.")
+        return
+
+    print(f"[OK] Ready to dispatch to {min(len(contacts), app_cfg.daily_cap)} contacts.")
 
     driver = None
     try:
         driver = BrowserManager.launch_driver(
-            browser_key=cfg.get("browser", "chrome"),
-            profile=cfg.get("profile", {"dir": "__dedicated__", "name": "Dedicated", "path": os.path.join(base_dir, "whatsapp_browser_session"), "is_dedicated": True}),
+            browser_key=app_cfg.browser,
+            profile=cfg.get("profile", {
+                "dir": "__dedicated__",
+                "name": "Dedicated",
+                "path": os.path.join(base_dir, "whatsapp_browser_session"),
+                "is_dedicated": True
+            }),
             headless=headless
         )
     except Exception as e:
+        logger.error(f"Could not start browser driver: {e}")
         print(f"\n[ERROR] Could not start browser driver: {e}")
         return
 
@@ -108,20 +143,15 @@ def run_batch_job(cfg: dict, headless: bool = False):
             print("[ERROR] Login verification failed. Aborting.")
             return
 
-        min_d = float(cfg.get("min_delay", 8.0))
-        max_d = float(cfg.get("max_delay", 15.0))
-        b_size = int(cfg.get("batch_size", 20))
-        b_pause = float(cfg.get("batch_pause", 60.0))
-        cap = int(cfg.get("daily_cap", 100))
-        global_att = cfg.get("attachment_path") if cfg.get("attach_enabled") else None
+        global_att = app_cfg.attachment_path if app_cfg.attach_enabled else None
 
         results = engine.send_batch(
             contacts=contacts,
-            min_delay=min_d,
-            max_delay=max_d,
-            batch_size=b_size,
-            batch_cooldown_secs=b_pause,
-            max_daily_limit=cap,
+            min_delay=app_cfg.min_delay,
+            max_delay=app_cfg.max_delay,
+            batch_size=app_cfg.batch_size,
+            batch_cooldown_secs=app_cfg.batch_pause,
+            max_daily_limit=app_cfg.daily_cap,
             global_attachment=global_att
         )
 
@@ -135,6 +165,7 @@ def run_batch_job(cfg: dict, headless: bool = False):
                 writer.writerows(results)
             print(f"\n[REPORT] Detailed delivery report saved to: {os.path.basename(report_file)}")
         except Exception as e:
+            logger.warning(f"Could not write report file: {e}")
             print(f"[WARNING] Could not write report file: {e}")
 
         sent_cnt = sum(1 for r in results if r["status"] == "SENT")
@@ -184,6 +215,7 @@ def run_scheduler_loop(cfg: dict, schedule_time_str: str, headless: bool = False
         try:
             run_batch_job(cfg, headless=headless)
         except Exception as e:
+            logger.error(f"Scheduler batch job failed: {e}")
             print(f"[SCHEDULER ERROR] Batch job failed: {e}")
 
 
@@ -194,6 +226,10 @@ def main():
     parser.add_argument("--schedule", type=str, default=None, help="Schedule daily execution at HH:MM (e.g. 09:30)")
     parser.add_argument("--headless", action="store_true", help="Run browser in headless mode (background)")
     parser.add_argument("--file", type=str, default=None, help="Override contacts file path")
+    parser.add_argument("--preset", type=str, default=None, choices=["safe", "balanced", "fast"], help="Apply safety preset (safe, balanced, fast)")
+    parser.add_argument("--dry-run", action="store_true", help="Simulate campaign without opening browser or sending messages")
+    parser.add_argument("--validate", action="store_true", help="Perform pre-flight validation audit on contacts file")
+    parser.add_argument("--dedupe", action="store_true", help="Automatically remove duplicate phone numbers")
     parser.add_argument("--device-info", action="store_true", help="Display hardware Device ID and role")
     parser.add_argument("--check-update", action="store_true", help="Check remote repository for updates")
     parser.add_argument("--package-release", type=str, default=None, metavar="VERSION", help="Package a release zip (Developer only)")
@@ -237,21 +273,41 @@ def main():
         print(msg)
         return
 
+    # If --validate is passed, perform standalone pre-flight audit
+    if args.validate:
+        print_banner()
+        cfg = load_config()
+        app_cfg = AppConfig.from_dict(cfg)
+        target_f = args.file or app_cfg.data_file
+        if not os.path.isabs(target_f):
+            target_f = os.path.join(base_dir, target_f)
+        print(f"\nAuditing contacts file: {os.path.basename(target_f)}...")
+        try:
+            contacts = DataLoader.load_contacts(target_f, default_country_code=app_cfg.default_country_code)
+            report = PreFlightValidator.audit_contacts(contacts, app_cfg)
+            print(report.summary())
+        except Exception as e:
+            print(f"[ERROR] Could not audit contacts: {e}")
+        return
+
     # If no CLI arguments provided, launch the GUI interface!
-    if not (args.cli or args.auto or args.schedule):
+    if not (args.cli or args.auto or args.schedule or args.dry_run):
         try:
             from gui import launch_gui
             launch_gui()
             return
         except Exception as e:
+            logger.warning(f"Could not launch GUI ({e}). Falling back to CLI mode.")
             print(f"[WARNING] Could not launch GUI ({e}). Falling back to CLI mode.")
 
     # CLI / Automated mode
     print_banner()
     cfg = load_config()
-    if not cfg:
-        print("[ERROR] No config.json found. Please run the GUI first or provide full configuration.")
-        return
+    app_cfg = AppConfig.from_dict(cfg)
+
+    if args.preset:
+        app_cfg.apply_preset(args.preset)
+        cfg = app_cfg.to_dict()
 
     if args.file:
         cfg["data_file"] = args.file
@@ -259,7 +315,7 @@ def main():
     if args.schedule:
         run_scheduler_loop(cfg, args.schedule, headless=args.headless)
     else:
-        run_batch_job(cfg, headless=args.headless)
+        run_batch_job(cfg, headless=args.headless, dry_run=args.dry_run, dedupe=args.dedupe)
 
 
 if __name__ == "__main__":

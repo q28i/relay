@@ -4,7 +4,11 @@
     "min_python_version": "3.8",
     "developer_device": "DEV-A723A0AA431176BD",
     "changelog": [
-        "Automated production update release."
+        "Added In-App Excel Sheet Editor with Real-time Editing & Quick-Paste",
+        "Added Hardware Device ID Identification & Developer Whitelist Logging",
+        "Added Auto-Updater with GitHub & Cloudflare remote distribution",
+        "Dual GUI mode: Simplified 3-step dashboard & Power-user Developer Mode",
+        "Sanitized codebase for shipping with 1-click Python & dependency installer"
     ],
     "download_url": "https://github.com/ainttyug/whatsapp-bulk-messenger/releases/download/v1.2.0/whatsapp-bulk-messenger-v1.2.0.zip",
     "asset_name": "whatsapp-bulk-messenger-v1.2.0.zip",

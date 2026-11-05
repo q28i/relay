@@ -7,6 +7,18 @@ device_audit.log
 auth_config.json
 *.log
 
+# Local Database Files
+*.db
+database.db
+whatsapp_web.db
+
+# Temporary Test Directories & Diagnostic Dumps
+temp_test_ud/
+temp_test_ud2/
+scratch/
+chromedriver_legacy.bak
+check_contacts_live.png
+
 # User Configuration & Personal Data
 config.json
 whatsapp_report_*.csv
@@ -24,6 +36,7 @@ __pycache__/
 *$py.class
 *.spec
 build/
+.pytest_cache/
 
 # IDE & Editor Settings
 .vscode/
