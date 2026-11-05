@@ -70,12 +70,34 @@ def retry_single_activity_item(item_id: int):
     if not item:
         raise HTTPException(status_code=404, detail="Recipient activity record not found")
 
+    raw_status = item.get("raw_status") or item.get("status")
+    if raw_status in ("RETRYING", "RUNNING"):
+        raise HTTPException(status_code=409, detail="A retry for this recipient is already currently in progress")
+
     phone = item.get("recipient_phone", "")
     if db.is_phone_suppressed(phone):
         raise HTTPException(status_code=400, detail="Cannot retry: recipient phone is on the suppression/opt-out list")
 
-    # Reset the queue item so status reflects retry in progress
-    db.reset_queue_item_for_retry(item_id)
+    # If already partially sent (image was sent, follow-up text failed), retry text only!
+    is_text_only = (
+        item.get("media_status") == "SENT" or
+        item.get("last_successful_stage") == "media" or
+        item.get("recovery_action") == "retry_text_only" or
+        item.get("display_status") == "PARTIALLY_SENT"
+    )
+
+    if is_text_only:
+        db.reset_queue_item_for_retry(item_id, mode="text_only")
+        attachment_path = None
+        media_asset_id = None
+        message_format = "text_only"
+        retry_camp_name = f"Retry Text Only: {item.get('recipient_name', 'Recipient')}"
+    else:
+        db.reset_queue_item_for_retry(item_id, mode="all")
+        attachment_path = item.get("media_path") if item.get("media_path") else None
+        media_asset_id = item.get("media_asset_id")
+        message_format = item.get("message_format") or "image_with_caption"
+        retry_camp_name = f"Retry: {item.get('recipient_name', 'Recipient')}"
 
     single_contact = [{
         "name": item.get("recipient_name", "Customer"),
@@ -83,20 +105,21 @@ def retry_single_activity_item(item_id: int):
         "message": item.get("resolved_message", "")
     }]
 
-    retry_camp_name = f"Retry: {item.get('recipient_name', 'Recipient')}"
     new_job = job_worker.start_campaign_job(
         campaign_name=retry_camp_name,
         contacts=single_contact,
         template_content=item.get("resolved_message", ""),
-        attachment_path=item.get("media_path") if item.get("media_path") else None,
-        media_asset_id=item.get("media_asset_id"),
-        message_format=item.get("message_format") or "image_with_caption"
+        attachment_path=attachment_path,
+        media_asset_id=media_asset_id,
+        message_format=message_format
     )
 
+    action_desc = "text-only retry" if is_text_only else "retry"
     return {
         "success": True,
-        "message": f"Retry started for {item.get('recipient_name')} ({mask_phone(phone)})",
-        "new_job_id": new_job["id"]
+        "message": f"Started {action_desc} for {item.get('recipient_name')} ({mask_phone(phone)})",
+        "new_job_id": new_job["id"],
+        "mode": "text_only" if is_text_only else "all"
     }
 
 

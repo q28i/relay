@@ -138,8 +138,9 @@ class WhatsAppEngine:
         (By.XPATH, "//button[contains(., 'OK')]")
     ]
 
-    def __init__(self, driver):
+    def __init__(self, driver=None, headless: bool = False):
         self.driver = driver
+        self.headless = headless
         self._is_paused = False
         self._is_stopped = False
 
@@ -216,34 +217,138 @@ class WhatsAppEngine:
         message: str = "",
         attachment_path: Optional[str] = None,
         wait_timeout: int = 30,
-        message_format: str = "image_with_caption"
+        message_format: str = "image_with_caption",
+        stage: str = "all"
     ) -> Dict[str, Any]:
         """
         Sends a message and/or media attachment to a phone number.
         Works for text only, media only, or media with text caption.
         Supports message_format: 'image_with_caption' (default) or 'image_then_text'.
+        Supports stage: 'all' (default), 'text_only' (skips media, preserves media_status='SENT').
         """
+        if stage == "text_only":
+            message = process_spintax(message)
+            if not message or not message.strip():
+                return {
+                    "status": "SENT",
+                    "media_status": "SENT",
+                    "text_status": "SKIPPED",
+                    "overall_status": "SENT",
+                    "last_successful_stage": "media",
+                    "recovery_eligibility": "none",
+                    "media_sent": True,
+                    "text_sent": False,
+                    "caption_sent": False,
+                    "message_format": message_format,
+                    "error": None
+                }
+
+            # Open chat if not already opened
+            encoded_msg = urllib.parse.quote(message)
+            direct_url = f"{self.URL_BASE}/send?phone={phone}&text={encoded_msg}"
+            try:
+                self.driver.get(direct_url)
+            except Exception as e:
+                return {
+                    "status": "PARTIAL",
+                    "media_status": "SENT",
+                    "text_status": "FAILED",
+                    "overall_status": "PARTIALLY_SENT",
+                    "last_successful_stage": "media",
+                    "recovery_eligibility": "retry_text_only",
+                    "media_sent": True,
+                    "text_sent": False,
+                    "message_format": message_format,
+                    "error": f"Failed loading chat URL for text retry: {e}"
+                }
+
+            try:
+                text_res = self._send_text_message_flow(message, wait_timeout=wait_timeout)
+            except Exception as e:
+                text_res = {"status": "FAILED", "error": str(e)}
+
+            if text_res.get("status") == "SENT":
+                return {
+                    "status": "SENT",
+                    "media_status": "SENT",
+                    "text_status": "SENT",
+                    "overall_status": "SENT",
+                    "last_successful_stage": "text",
+                    "recovery_eligibility": "none",
+                    "media_sent": True,
+                    "text_sent": True,
+                    "caption_sent": False,
+                    "message_format": message_format,
+                    "error": None
+                }
+            elif text_res.get("status") == "UNCERTAIN":
+                return {
+                    "status": "UNCERTAIN",
+                    "media_status": "SENT",
+                    "text_status": "UNCERTAIN",
+                    "overall_status": "UNCERTAIN",
+                    "last_successful_stage": "media",
+                    "recovery_eligibility": "reconcile_manual",
+                    "media_sent": True,
+                    "text_sent": False,
+                    "caption_sent": False,
+                    "message_format": message_format,
+                    "error": f"Image sent, but follow-up text status uncertain: {text_res.get('error')}"
+                }
+            else:
+                return {
+                    "status": "PARTIAL",
+                    "media_status": "SENT",
+                    "text_status": "FAILED",
+                    "overall_status": "PARTIALLY_SENT",
+                    "last_successful_stage": "media",
+                    "recovery_eligibility": "retry_text_only",
+                    "media_sent": True,
+                    "text_sent": False,
+                    "caption_sent": False,
+                    "message_format": message_format,
+                    "error": f"Image sent, but follow-up text failed to send: {text_res.get('error')}"
+                }
+
         if attachment_path:
             abs_path = os.path.abspath(attachment_path)
             if not os.path.isfile(abs_path):
                 return {
                     "status": "FAILED",
+                    "media_status": "FAILED",
+                    "text_status": "NOT_ATTEMPTED",
+                    "overall_status": "FAILED",
+                    "last_successful_stage": "none",
+                    "recovery_eligibility": "retry_all",
                     "media_sent": False,
+                    "text_sent": False,
                     "caption_sent": False,
-                    "error": f"Media failed: file missing on disk: {abs_path}. No text was sent."
+                    "error": f"Media file not found: {abs_path}. No text was sent."
                 }
             try:
                 if os.path.getsize(abs_path) == 0:
                     return {
                         "status": "FAILED",
+                        "media_status": "FAILED",
+                        "text_status": "NOT_ATTEMPTED",
+                        "overall_status": "FAILED",
+                        "last_successful_stage": "none",
+                        "recovery_eligibility": "retry_all",
                         "media_sent": False,
+                        "text_sent": False,
                         "caption_sent": False,
                         "error": f"Media failed: file is 0 bytes: {abs_path}. No text was sent."
                     }
             except Exception as e:
                 return {
                     "status": "FAILED",
+                    "media_status": "FAILED",
+                    "text_status": "NOT_ATTEMPTED",
+                    "overall_status": "FAILED",
+                    "last_successful_stage": "none",
+                    "recovery_eligibility": "retry_all",
                     "media_sent": False,
+                    "text_sent": False,
                     "caption_sent": False,
                     "error": f"Media failed: cannot inspect file size: {e}. No text was sent."
                 }
@@ -267,7 +372,7 @@ class WhatsAppEngine:
             for by_type, query in self.INVALID_POPUP_SELECTORS:
                 try:
                     invalid_popup = self.driver.find_element(by_type, query)
-                    if invalid_popup.is_displayed():
+                    if invalid_popup is not None and invalid_popup.is_displayed() is True:
                         self._dismiss_invalid_popup()
                         return {"status": "INVALID_NUMBER", "error": "Number not registered on WhatsApp"}
                 except Exception:
@@ -275,24 +380,6 @@ class WhatsAppEngine:
 
             # 2. If Media Attachment is specified, attach file
             if attachment_path:
-                if not os.path.isfile(attachment_path):
-                    return {
-                        "status": "FAILED",
-                        "media_sent": False,
-                        "caption_sent": False,
-                        "error": f"Media file not found: {attachment_path}. No text was sent."
-                    }
-                try:
-                    if os.path.getsize(attachment_path) == 0:
-                        return {
-                            "status": "FAILED",
-                            "media_sent": False,
-                            "caption_sent": False,
-                            "error": f"Media failed: file is 0 bytes: {attachment_path}. No text was sent."
-                        }
-                except Exception:
-                    pass
-
                 # Verify chat input or chat area is loaded
                 chat_loaded = False
                 for by_type, query in self.MESSAGE_INPUT_SELECTORS:
@@ -309,62 +396,245 @@ class WhatsAppEngine:
                         # Option B: Send image first without caption, then send separate text
                         media_res = self._send_attachment_flow(attachment_path, caption="", timeout=wait_timeout)
                         if media_res.get("status") != "SENT":
-                            return media_res
-                        time.sleep(1.5)
-                        text_sent = False
-                        for by_type, query in self.MESSAGE_INPUT_SELECTORS:
-                            try:
-                                inp = self.driver.find_element(by_type, query)
-                                if inp.is_displayed():
-                                    inp.click()
-                                    time.sleep(0.2)
-                                    inp.send_keys(message)
-                                    time.sleep(0.3)
-                                    inp.send_keys(Keys.ENTER)
-                                    time.sleep(2.0)
-                                    text_sent = True
-                                    break
-                            except Exception:
-                                pass
-                        return {
-                            "status": "SENT" if text_sent else "PARTIAL",
-                            "media_sent": True,
-                            "caption_sent": False,
-                            "text_sent": text_sent,
-                            "message_format": "image_then_text",
-                            "error": None if text_sent else "Image sent, but follow-up text failed to send"
-                        }
+                            return {
+                                **media_res,
+                                "media_status": "FAILED",
+                                "text_status": "NOT_ATTEMPTED",
+                                "overall_status": "FAILED",
+                                "last_successful_stage": "none",
+                                "recovery_eligibility": "retry_all",
+                                "text_sent": False
+                            }
+                        time.sleep(1.0)
+                        try:
+                            text_res = self._send_text_message_flow(message, wait_timeout=wait_timeout)
+                        except Exception as ex:
+                            text_res = {"status": "FAILED", "error": str(ex)}
+
+                        if text_res.get("status") == "SENT":
+                            return {
+                                "status": "SENT",
+                                "media_status": "SENT",
+                                "text_status": "SENT",
+                                "overall_status": "SENT",
+                                "last_successful_stage": "text",
+                                "recovery_eligibility": "none",
+                                "media_sent": True,
+                                "text_sent": True,
+                                "caption_sent": False,
+                                "message_format": "image_then_text",
+                                "error": None
+                            }
+                        elif text_res.get("status") == "UNCERTAIN":
+                            return {
+                                "status": "UNCERTAIN",
+                                "media_status": "SENT",
+                                "text_status": "UNCERTAIN",
+                                "overall_status": "UNCERTAIN",
+                                "last_successful_stage": "media",
+                                "recovery_eligibility": "reconcile_manual",
+                                "media_sent": True,
+                                "text_sent": False,
+                                "caption_sent": False,
+                                "message_format": "image_then_text",
+                                "error": f"Image sent, but follow-up text status uncertain: {text_res.get('error')}"
+                            }
+                        else:
+                            return {
+                                "status": "PARTIAL",
+                                "media_status": "SENT",
+                                "text_status": "FAILED",
+                                "overall_status": "PARTIALLY_SENT",
+                                "last_successful_stage": "media",
+                                "recovery_eligibility": "retry_text_only",
+                                "media_sent": True,
+                                "text_sent": False,
+                                "caption_sent": False,
+                                "message_format": "image_then_text",
+                                "error": f"Image sent, but follow-up text failed to send: {text_res.get('error')}"
+                            }
                     else:
                         # Option A (Default): One outgoing image message with the caption
-                        return self._send_attachment_flow(attachment_path, caption=message, timeout=wait_timeout)
+                        media_res = self._send_attachment_flow(attachment_path, caption=message, timeout=wait_timeout)
+                        if media_res.get("status") == "SENT":
+                            return {
+                                **media_res,
+                                "media_status": "SENT",
+                                "text_status": "SENT" if message else "SKIPPED",
+                                "overall_status": "SENT",
+                                "last_successful_stage": "caption" if message else "media",
+                                "recovery_eligibility": "none",
+                                "text_sent": bool(message)
+                            }
+                        else:
+                            return {
+                                **media_res,
+                                "media_status": "FAILED",
+                                "text_status": "NOT_ATTEMPTED",
+                                "overall_status": "FAILED",
+                                "last_successful_stage": "none",
+                                "recovery_eligibility": "retry_all",
+                                "text_sent": False
+                            }
 
             # 3. Text-only message flow
             else:
-                for by_type, query in self.SEND_BUTTON_SELECTORS:
-                    try:
-                        send_btn = self.driver.find_element(by_type, query)
-                        if send_btn.is_displayed():
-                            time.sleep(1)
-                            send_btn.click()
-                            time.sleep(2.5)
-                            return {"status": "SENT", "media_sent": False, "caption_sent": False, "error": None}
-                    except Exception:
-                        pass
+                try:
+                    text_res = self._send_text_message_flow(message, wait_timeout=wait_timeout)
+                except Exception as ex:
+                    text_res = {"status": "FAILED", "error": str(ex)}
 
-                for by_type, query in self.MESSAGE_INPUT_SELECTORS:
-                    try:
-                        inp = self.driver.find_element(by_type, query)
-                        if inp.is_displayed() and inp.text.strip():
-                            time.sleep(1)
-                            inp.send_keys(Keys.ENTER)
-                            time.sleep(2.5)
-                            return {"status": "SENT", "media_sent": False, "caption_sent": False, "error": None}
-                    except Exception:
-                        pass
+                if text_res.get("status") == "SENT":
+                    return {
+                        "status": "SENT",
+                        "media_status": "SKIPPED",
+                        "text_status": "SENT",
+                        "overall_status": "SENT",
+                        "last_successful_stage": "text",
+                        "recovery_eligibility": "none",
+                        "media_sent": False,
+                        "caption_sent": False,
+                        "text_sent": True,
+                        "error": None
+                    }
+                else:
+                    return {
+                        "status": "FAILED",
+                        "media_status": "SKIPPED",
+                        "text_status": "FAILED",
+                        "overall_status": "FAILED",
+                        "last_successful_stage": "none",
+                        "recovery_eligibility": "retry_all",
+                        "media_sent": False,
+                        "caption_sent": False,
+                        "text_sent": False,
+                        "error": text_res.get("error")
+                    }
 
             time.sleep(1.5)
 
         return {"status": "FAILED", "media_sent": False, "caption_sent": False, "error": "Timed out waiting for chat to initialize"}
+
+    def _send_text_message_flow(self, message: str, wait_timeout: int = 30) -> Dict[str, Any]:
+        """
+        Robustly sends a text message into the active WhatsApp Web conversation.
+        Waits for main footer composer, safely handles stale element references,
+        types via Lexical/execCommand + send_keys, clicks send, and verifies transmission.
+        """
+        if not message or not message.strip():
+            return {"status": "SENT", "error": None}
+
+        clean_text = message.strip()
+
+        # Step 0: Check for invalid number or connection popup
+        for by_type, query in self.INVALID_POPUP_SELECTORS:
+            try:
+                pop = self.driver.find_element(by_type, query)
+                if pop is not None and pop.is_displayed() is True:
+                    self._dismiss_invalid_popup()
+                    return {"status": "FAILED", "error": "Invalid phone number or conversation error"}
+            except Exception:
+                pass
+
+        # Step 1: Locate interactable footer message composer
+        start_time = time.time()
+        composer_el = None
+
+        while time.time() - start_time < wait_timeout:
+            for by_type, query in self.MESSAGE_INPUT_SELECTORS:
+                try:
+                    candidates = self.driver.find_elements(by_type, query)
+                    for cand in candidates:
+                        try:
+                            if cand.is_displayed():
+                                is_editable = (cand.get_attribute("contenteditable") == "true") or cand.tag_name in ("input", "textarea")
+                                if is_editable:
+                                    composer_el = cand
+                                    break
+                        except Exception:
+                            # StaleElementReferenceException or disconnected DOM node
+                            continue
+                    if composer_el:
+                        break
+                except Exception:
+                    continue
+
+            if composer_el:
+                break
+            time.sleep(0.3)
+
+        if not composer_el:
+            return {"status": "FAILED", "error": "Composer element not interactable or not found"}
+
+        # Step 2: Focus and insert text
+        try:
+            try:
+                composer_el.click()
+            except Exception:
+                self.driver.execute_script("arguments[0].click();", composer_el)
+            time.sleep(0.2)
+
+            # Native execCommand text insertion for Lexical/React contenteditable
+            self.driver.execute_script("""
+                var el = arguments[0];
+                var text = arguments[1];
+                el.focus();
+                var sel = window.getSelection();
+                var range = document.createRange();
+                range.selectNodeContents(el);
+                sel.removeAllRanges();
+                sel.addRange(range);
+                var success = document.execCommand('insertText', false, text);
+                if (!success || (el.textContent && el.textContent.indexOf(text) === -1)) {
+                    el.innerText = text;
+                    el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            """, composer_el, clean_text)
+            time.sleep(0.2)
+
+            # Standard send_keys fallback if text is not present
+            try:
+                curr_text = composer_el.get_attribute("textContent") or composer_el.text or ""
+                if clean_text not in curr_text:
+                    composer_el.send_keys(clean_text)
+            except Exception:
+                pass
+        except Exception as e:
+            return {"status": "FAILED", "error": f"Failed inserting text into composer: {e}"}
+
+        # Step 3: Click Send button or send ENTER
+        send_clicked = False
+        time.sleep(0.3)
+        for by_type, query in self.SEND_BUTTON_SELECTORS:
+            try:
+                btns = self.driver.find_elements(by_type, query)
+                for btn in btns:
+                    try:
+                        if btn.is_displayed():
+                            try:
+                                btn.click()
+                            except Exception:
+                                self.driver.execute_script("arguments[0].click();", btn)
+                            send_clicked = True
+                            break
+                    except Exception:
+                        continue
+                if send_clicked:
+                    break
+            except Exception:
+                pass
+
+        if not send_clicked:
+            try:
+                composer_el.send_keys(Keys.ENTER)
+                send_clicked = True
+            except Exception as e:
+                return {"status": "FAILED", "error": f"Failed submitting text message: {e}"}
+
+        time.sleep(1.0)
+        return {"status": "SENT", "error": None}
+
 
     def _send_attachment_flow(self, file_path: str, caption: str = "", timeout: int = 30) -> Dict[str, Any]:
         """Handles attaching images, videos, and documents with captions honestly."""

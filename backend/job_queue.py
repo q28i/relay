@@ -21,6 +21,9 @@ from logger import get_logger, mask_phone
 
 logger = get_logger("JobQueue")
 
+# Session-scoped dispatch lock guaranteeing no overlapping browser operations
+_session_dispatch_lock = threading.Lock()
+
 
 class BackgroundJobWorker:
     """Manages active job execution in a dedicated background worker thread with durable queueing."""
@@ -572,6 +575,15 @@ class BackgroundJobWorker:
                     if self._active_job and self._active_job.get("id") == job_id:
                         self._active_job["current_recipient"] = f"{recipient_name} (+{masked})"
 
+                # Check if item is already partially sent (e.g. text-only retry)
+                is_text_only_retry = (
+                    item.get("media_status") == "SENT" or
+                    item.get("last_successful_stage") == "media" or
+                    item.get("recovery_eligibility") == "retry_text_only"
+                )
+                target_media_path = None if is_text_only_retry else (media_path if media_path else None)
+                target_stage = "text_only" if is_text_only_retry else "all"
+
                 log_event(f"[{idx}/{total_items}] Dispatching to {recipient_name} (+{masked})...")
 
                 # Dispatch attempt with bounded exponential backoff on transient errors
@@ -585,46 +597,135 @@ class BackgroundJobWorker:
 
                     try:
                         item_format = item.get("message_format") or "image_with_caption"
-                        try:
-                            res = provider.send_message(
-                                phone=recipient_phone,
-                                message=resolved_msg,
-                                attachment_path=media_path if media_path else None,
-                                message_format=item_format
-                            )
-                        except TypeError:
-                            res = provider.send_message(
-                                phone=recipient_phone,
-                                message=resolved_msg,
-                                attachment_path=media_path if media_path else None
-                            )
+                        with _session_dispatch_lock:
+                            try:
+                                res = provider.send_message(
+                                    phone=recipient_phone,
+                                    message=resolved_msg,
+                                    attachment_path=target_media_path,
+                                    message_format=item_format,
+                                    stage=target_stage
+                                )
+                            except TypeError:
+                                try:
+                                    res = provider.send_message(
+                                        phone=recipient_phone,
+                                        message=resolved_msg,
+                                        attachment_path=target_media_path,
+                                        message_format=item_format
+                                    )
+                                except TypeError:
+                                    res = provider.send_message(
+                                        phone=recipient_phone,
+                                        message=resolved_msg,
+                                        attachment_path=target_media_path
+                                    )
                     except Exception as e:
                         res = {"status": "FAILED", "error": str(e)}
 
                     status = res.get("status")
                     if status == "SENT":
                         dispatched_successfully = True
-                        db.update_queue_item_status(item["id"], "DISPATCHED")
+                        media_st = res.get("media_status") or ("SENT" if (media_path or is_text_only_retry) else "SKIPPED")
+                        text_st = res.get("text_status") or ("SENT" if resolved_msg else "SKIPPED")
+                        db.update_queue_item_status(
+                            item["id"],
+                            "DISPATCHED",
+                            media_status=media_st,
+                            text_status=text_st,
+                            overall_status="SENT",
+                            last_successful_stage=res.get("last_successful_stage", "all"),
+                            recovery_eligibility="none"
+                        )
                         db.record_job_result(
                             job_id=job_id,
                             name=recipient_name,
                             phone=recipient_phone,
                             status="SENT",
-                            attachment=media_path
+                            attachment=media_path,
+                            media_status=media_st,
+                            text_status=text_st,
+                            overall_status="SENT",
+                            last_successful_stage=res.get("last_successful_stage", "all"),
+                            recovery_eligibility="none"
                         )
                         sent_count += 1
                         log_event(f"  -> Dispatched successfully to +{masked}")
                         break
+                    elif status in ("PARTIAL", "PARTIALLY_SENT"):
+                        last_error = res.get("error") or "Image sent, but follow-up text failed to send"
+                        # Image was delivered, text failed. On automatic retry, NEVER re-send image!
+                        if attempt < max_retries and not self._is_stopped:
+                            attempt += 1
+                            target_media_path = None
+                            target_stage = "text_only"
+                            backoff_secs = min(30.0, 2.0 * (2 ** (attempt - 1))) + random.uniform(0.5, 1.5)
+                            db.update_queue_item_status(
+                                item["id"],
+                                "RETRYING",
+                                error_message=f"{last_error} (Retrying text-only {attempt}/{max_retries} in {backoff_secs:.1f}s)",
+                                retry_count=attempt,
+                                media_status="SENT",
+                                text_status="FAILED",
+                                overall_status="PARTIALLY_SENT",
+                                last_successful_stage="media",
+                                recovery_eligibility="retry_text_only"
+                            )
+                            log_event(f"  -> Partial send for +{masked} (media sent, text failed). Retrying text in {backoff_secs:.1f}s ({attempt}/{max_retries})...", "WARNING")
+                            time.sleep(backoff_secs)
+                        else:
+                            db.update_queue_item_status(
+                                item["id"],
+                                "PARTIALLY_SENT",
+                                error_message=last_error,
+                                retry_count=attempt,
+                                media_status="SENT",
+                                text_status="FAILED",
+                                overall_status="PARTIALLY_SENT",
+                                last_successful_stage="media",
+                                recovery_eligibility="retry_text_only"
+                            )
+                            db.record_job_result(
+                                job_id=job_id,
+                                name=recipient_name,
+                                phone=recipient_phone,
+                                status="PARTIALLY_SENT",
+                                error=f"[PARTIALLY_SENT] {last_error}",
+                                attachment=media_path,
+                                media_status="SENT",
+                                text_status="FAILED",
+                                overall_status="PARTIALLY_SENT",
+                                last_successful_stage="media",
+                                recovery_eligibility="retry_text_only"
+                            )
+                            failed_count += 1
+                            log_event(f"  -> Partial send recorded for +{masked}: media sent, follow-up text failed.", "WARNING")
+                            break
                     elif status == "UNCERTAIN":
                         last_error = res.get("error") or "Transmission initiated but outcome unconfirmed"
-                        db.update_queue_item_status(item["id"], "UNCERTAIN", error_message=last_error)
+                        media_st = res.get("media_status") or ("SENT" if (media_path or is_text_only_retry) else "SKIPPED")
+                        db.update_queue_item_status(
+                            item["id"],
+                            "UNCERTAIN",
+                            error_message=last_error,
+                            media_status=media_st,
+                            text_status="UNCERTAIN",
+                            overall_status="UNCERTAIN",
+                            last_successful_stage=res.get("last_successful_stage", "none"),
+                            recovery_eligibility="reconcile_manual"
+                        )
                         db.record_job_result(
                             job_id=job_id,
                             name=recipient_name,
                             phone=recipient_phone,
                             status="UNCERTAIN",
                             error=f"[UNCERTAIN] {last_error}",
-                            attachment=media_path
+                            attachment=media_path,
+                            media_status=media_st,
+                            text_status="UNCERTAIN",
+                            overall_status="UNCERTAIN",
+                            last_successful_stage=res.get("last_successful_stage", "none"),
+                            recovery_eligibility="reconcile_manual"
                         )
                         failed_count += 1
                         log_event(f"  -> Transmission unconfirmed for +{masked}: marked UNCERTAIN to prevent duplicate send.", "WARNING")
@@ -634,26 +735,40 @@ class BackgroundJobWorker:
                         # Classify permanent vs transient failures
                         err_upper = last_error.upper()
                         is_permanent = any(kw in err_upper for kw in [
-                            "INVALID", "NOT A VALID", "UNREGISTERED", "NOT ON WHATSAPP", "OPTED_OUT", "SUPPRESSED"
+                            "INVALID", "NOT A VALID", "UNREGISTERED", "NOT ON WHATSAPP", "OPTED_OUT", "SUPPRESSED", "MISSING ON DISK", "0 BYTES"
                         ])
 
                         if is_permanent or attempt >= max_retries:
                             final_st = "FAILED_PERMANENT" if is_permanent else "FAILED_MAX_RETRIES"
-                            db.update_queue_item_status(item["id"], final_st, error_message=last_error, retry_count=attempt)
+                            db.update_queue_item_status(
+                                item["id"],
+                                final_st,
+                                error_message=last_error,
+                                retry_count=attempt,
+                                media_status=res.get("media_status", "FAILED" if media_path else "SKIPPED"),
+                                text_status=res.get("text_status", "FAILED"),
+                                overall_status="FAILED",
+                                last_successful_stage="none",
+                                recovery_eligibility="retry_all"
+                            )
                             db.record_job_result(
                                 job_id=job_id,
                                 name=recipient_name,
                                 phone=recipient_phone,
                                 status="FAILED",
                                 error=f"[{final_st}] {last_error}",
-                                attachment=media_path
+                                attachment=media_path,
+                                media_status=res.get("media_status", "FAILED" if media_path else "SKIPPED"),
+                                text_status=res.get("text_status", "FAILED"),
+                                overall_status="FAILED",
+                                last_successful_stage="none",
+                                recovery_eligibility="retry_all"
                             )
                             failed_count += 1
                             log_event(f"  -> Dispatch failed permanently: {last_error}", "WARNING")
                             break
                         else:
                             attempt += 1
-                            # Exponential backoff with jitter: 2s, 4s, 8s... + jitter
                             backoff_secs = min(30.0, 2.0 * (2 ** (attempt - 1))) + random.uniform(0.5, 1.5)
                             db.update_queue_item_status(
                                 item["id"],
@@ -738,54 +853,53 @@ class BackgroundJobWorker:
                 "error": str(e)
             })
 
-    def pause_job(self, job_id: str) -> bool:
+    def pause_job(self, job_id: Optional[str] = None) -> bool:
         """Pauses the active job."""
         with self._lock:
-            if not self._active_job or self._active_job.get("id") != job_id:
+            if job_id and (not self._active_job or self._active_job.get("id") != job_id):
                 return False
-            if self._active_job.get("status") not in ("RUNNING", "WAITING_FOR_CONNECTION"):
-                return False
-            self._active_job["status"] = "PAUSED"
             self._is_paused = True
             if self._active_provider:
                 self._active_provider.pause()
-            db.update_job_status(job_id, "PAUSED")
-            db.log_event("WARNING", "JobQueue", f"Job {job_id} paused by user")
-            self._broadcast({"type": "job_paused", "job_id": job_id})
+            if self._active_job:
+                act_id = self._active_job.get("id")
+                self._active_job["status"] = "PAUSED"
+                db.update_job_status(act_id, "PAUSED")
+                db.log_event("WARNING", "JobQueue", f"Job {act_id} paused by user")
+                self._broadcast({"type": "job_paused", "job_id": act_id})
             return True
 
-    def resume_job(self, job_id: str) -> bool:
+    def resume_job(self, job_id: Optional[str] = None) -> bool:
         """Resumes a paused or connection-waiting job."""
         with self._lock:
-            if not self._active_job or self._active_job.get("id") != job_id:
+            if job_id and (not self._active_job or self._active_job.get("id") != job_id):
                 return False
-            cur_st = self._active_job.get("status")
-            if cur_st not in ("PAUSED", "WAITING_FOR_CONNECTION"):
-                return False
-
-            self._active_job["status"] = "RUNNING"
             self._is_paused = False
             if self._active_provider:
                 self._active_provider.resume()
-            db.update_job_status(job_id, "RUNNING")
-            db.log_event("INFO", "JobQueue", f"Job {job_id} resumed by user")
-            self._broadcast({"type": "job_resumed", "job_id": job_id})
+            if self._active_job:
+                act_id = self._active_job.get("id")
+                self._active_job["status"] = "RUNNING"
+                db.update_job_status(act_id, "RUNNING")
+                db.log_event("INFO", "JobQueue", f"Job {act_id} resumed by user")
+                self._broadcast({"type": "job_resumed", "job_id": act_id})
 
             if self._worker_args and (not self._worker_thread or not self._worker_thread.is_alive()):
+                act_id = self._active_job.get("id") if self._active_job else "resumed"
                 self._worker_thread = threading.Thread(
                     target=self._run_job_worker,
                     args=self._worker_args,
                     daemon=True,
-                    name=f"JobWorker-{job_id}"
+                    name=f"JobWorker-{act_id}"
                 )
                 self._worker_thread.start()
 
             return True
 
-    def cancel_job(self, job_id: str) -> bool:
+    def cancel_job(self, job_id: Optional[str] = None) -> bool:
         """Cancels an active or scheduled job immediately."""
         with self._lock:
-            if not self._active_job or self._active_job.get("id") != job_id:
+            if job_id and (not self._active_job or self._active_job.get("id") != job_id):
                 return False
             self._is_stopped = True
             self._is_paused = False
@@ -795,14 +909,18 @@ class BackgroundJobWorker:
                     self._schedule_timer = None
                 except Exception:
                     pass
-            self._active_job["status"] = "CANCELLED"
+            if self._active_job:
+                act_id = self._active_job.get("id")
+                self._active_job["status"] = "CANCELLED"
+                db.update_job_status(act_id, "CANCELLED")
+                db.log_event("WARNING", "JobQueue", f"Job {act_id} cancelled by user")
+                self._broadcast({"type": "job_cancelled", "job_id": act_id})
             if self._active_provider:
                 self._active_provider.stop()
-            db.update_job_status(job_id, "CANCELLED")
-            db.log_event("WARNING", "JobQueue", f"Job {job_id} cancelled by user")
-            self._broadcast({"type": "job_cancelled", "job_id": job_id})
             return True
 
 
-# Global singleton background worker
+# Global singleton background worker and compatibility aliases
 job_worker = BackgroundJobWorker()
+JobQueue = BackgroundJobWorker
+

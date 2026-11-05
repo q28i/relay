@@ -8437,10 +8437,24 @@ class WhatsAppDashboardApp {
       let statusBadge = '<span class="badge badge-neutral">Pending</span>';
       if (item.status === 'SENT' || item.status === 'COMPLETED') {
         statusBadge = '<span class="badge badge-success" title="Handed off to WhatsApp Web">Sent</span>';
+      } else if (item.status === 'PARTIALLY_SENT' || item.display_status === 'PARTIALLY_SENT') {
+        statusBadge = '<span class="badge badge-warning" title="Image sent, follow-up text failed" style="background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3);">Partially Sent</span>';
       } else if (item.status === 'FAILED') {
         statusBadge = '<span class="badge badge-danger">Failed</span>';
       } else if (item.status === 'UNCERTAIN') {
         statusBadge = '<span class="badge badge-warning">Uncertain</span>';
+      }
+
+      let componentBadges = '';
+      if (item.media_status && item.media_status !== 'SKIPPED') {
+        const medIcon = item.media_status === 'SENT' ? '✓' : '✕';
+        const medClass = item.media_status === 'SENT' ? 'badge-success' : 'badge-danger';
+        componentBadges += `<span class="badge ${medClass}" style="font-size: 0.65rem; padding: 1px 4px; margin-right: 3px;">Image: ${medIcon}</span>`;
+      }
+      if (item.text_status && item.text_status !== 'SKIPPED') {
+        const txtIcon = item.text_status === 'SENT' ? '✓' : '✕';
+        const txtClass = item.text_status === 'SENT' ? 'badge-success' : 'badge-danger';
+        componentBadges += `<span class="badge ${txtClass}" style="font-size: 0.65rem; padding: 1px 4px;">Text: ${txtIcon}</span>`;
       }
 
       let mediaDisplay = '<span style="color: var(--text-muted); font-size: 0.75rem;">Text only</span>';
@@ -8462,6 +8476,7 @@ class WhatsAppDashboardApp {
           <td>
             <strong>${this.escapeHtml(item.contact_name || 'Recipient')}</strong>
             <div style="font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-muted);">+${this.escapeHtml(item.phone || '')}</div>
+            ${componentBadges ? `<div style="margin-top: 3px;">${componentBadges}</div>` : ''}
           </td>
           <td style="max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8rem;" title="${this.escapeHtml(rawMsg)}">
             ${this.escapeHtml(rawMsg || '—')}
@@ -8515,6 +8530,12 @@ class WhatsAppDashboardApp {
         if (data.status === 'SENT' || data.status === 'COMPLETED') {
           badgeEl.classList.add('badge-success');
           badgeEl.textContent = 'Sent (Dispatched)';
+        } else if (data.status === 'PARTIALLY_SENT' || data.display_status === 'PARTIALLY_SENT') {
+          badgeEl.classList.add('badge-warning');
+          badgeEl.style.background = 'rgba(245,158,11,0.15)';
+          badgeEl.style.color = '#f59e0b';
+          badgeEl.style.border = '1px solid rgba(245,158,11,0.3)';
+          badgeEl.textContent = 'Partially Sent';
         } else if (data.status === 'FAILED') {
           badgeEl.classList.add('badge-danger');
           badgeEl.textContent = 'Failed';
@@ -8540,6 +8561,8 @@ class WhatsAppDashboardApp {
       if (delivEl) {
         if (data.status === 'SENT' || data.status === 'COMPLETED') {
           delivEl.innerHTML = '<strong>Handoff Confirmed:</strong> Message was successfully handed off to the WhatsApp Web chat input and accepted by the WhatsApp network interface.';
+        } else if (data.status === 'PARTIALLY_SENT' || data.display_status === 'PARTIALLY_SENT') {
+          delivEl.innerHTML = '<strong>Partially Delivered:</strong> The media asset was successfully delivered to the recipient, but the follow-up text failed to send. Retrying will safely send only the text without resending the media.';
         } else if (data.status === 'FAILED') {
           delivEl.innerHTML = '<strong>Handoff Failed:</strong> The dispatch attempt failed before message transmission could complete.';
         } else if (data.status === 'UNCERTAIN') {
@@ -8586,8 +8609,15 @@ class WhatsAppDashboardApp {
       }
 
       if (retryBtn) {
-        const canRetry = data.status === 'FAILED' || data.status === 'UNCERTAIN';
+        const canRetry = data.status === 'FAILED' || data.status === 'UNCERTAIN' || data.status === 'PARTIALLY_SENT' || data.display_status === 'PARTIALLY_SENT';
         retryBtn.style.display = canRetry ? 'inline-flex' : 'none';
+        if (data.recovery_action === 'retry_text_only' || data.media_status === 'SENT') {
+          retryBtn.textContent = 'Retry Text Only';
+          retryBtn.title = 'Image was already delivered. Retrying will only send the follow-up text.';
+        } else {
+          retryBtn.textContent = 'Retry Recipient';
+          retryBtn.title = 'Re-queue message dispatch for this recipient';
+        }
       }
 
       this.openModal('modal-recipient-drawer');

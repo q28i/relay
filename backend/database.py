@@ -322,6 +322,19 @@ class DatabaseManager:
                     cursor.execute("ALTER TABLE campaign_queue_items ADD COLUMN allocation_rule TEXT DEFAULT ''")
                 if "message_format" not in queue_cols:
                     cursor.execute("ALTER TABLE campaign_queue_items ADD COLUMN message_format TEXT DEFAULT 'image_with_caption'")
+                if "media_status" not in queue_cols:
+                    cursor.execute("ALTER TABLE campaign_queue_items ADD COLUMN media_status TEXT DEFAULT 'PENDING'")
+                if "text_status" not in queue_cols:
+                    cursor.execute("ALTER TABLE campaign_queue_items ADD COLUMN text_status TEXT DEFAULT 'PENDING'")
+                if "overall_status" not in queue_cols:
+                    cursor.execute("ALTER TABLE campaign_queue_items ADD COLUMN overall_status TEXT DEFAULT 'PENDING'")
+                if "last_successful_stage" not in queue_cols:
+                    cursor.execute("ALTER TABLE campaign_queue_items ADD COLUMN last_successful_stage TEXT DEFAULT 'none'")
+                if "recovery_eligibility" not in queue_cols:
+                    cursor.execute("ALTER TABLE campaign_queue_items ADD COLUMN recovery_eligibility TEXT DEFAULT 'retry_all'")
+                if "stage_retry_count" not in queue_cols:
+                    cursor.execute("ALTER TABLE campaign_queue_items ADD COLUMN stage_retry_count INTEGER DEFAULT 0")
+
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_queue_job_status ON campaign_queue_items (job_id, status)")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_queue_idempotency ON campaign_queue_items (idempotency_key)")
 
@@ -335,11 +348,28 @@ class DatabaseManager:
                         status TEXT NOT NULL,
                         error TEXT DEFAULT '',
                         attachment TEXT DEFAULT '',
+                        media_status TEXT DEFAULT '',
+                        text_status TEXT DEFAULT '',
+                        overall_status TEXT DEFAULT '',
+                        last_successful_stage TEXT DEFAULT '',
+                        recovery_eligibility TEXT DEFAULT '',
                         timestamp TEXT NOT NULL,
                         FOREIGN KEY (job_id) REFERENCES jobs (id) ON DELETE CASCADE
                     )
                 """)
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_job_results_job_id ON job_results (job_id)")
+                cursor.execute("PRAGMA table_info(job_results)")
+                jr_cols = {row["name"] for row in cursor.fetchall()}
+                if "media_status" not in jr_cols:
+                    cursor.execute("ALTER TABLE job_results ADD COLUMN media_status TEXT DEFAULT ''")
+                if "text_status" not in jr_cols:
+                    cursor.execute("ALTER TABLE job_results ADD COLUMN text_status TEXT DEFAULT ''")
+                if "overall_status" not in jr_cols:
+                    cursor.execute("ALTER TABLE job_results ADD COLUMN overall_status TEXT DEFAULT ''")
+                if "last_successful_stage" not in jr_cols:
+                    cursor.execute("ALTER TABLE job_results ADD COLUMN last_successful_stage TEXT DEFAULT ''")
+                if "recovery_eligibility" not in jr_cols:
+                    cursor.execute("ALTER TABLE job_results ADD COLUMN recovery_eligibility TEXT DEFAULT ''")
 
                 # 11. Audit Logs
                 cursor.execute("""
@@ -2053,15 +2083,33 @@ class DatabaseManager:
                     """, (sent_count, failed_count, current_recipient, job_id))
                 conn.commit()
 
-    def record_job_result(self, job_id: str, name: str, phone: str, status: str, error: str = "", attachment: str = ""):
+    def record_job_result(
+        self,
+        job_id: str,
+        name: str,
+        phone: str,
+        status: str,
+        error: str = "",
+        attachment: str = "",
+        media_status: str = "",
+        text_status: str = "",
+        overall_status: str = "",
+        last_successful_stage: str = "",
+        recovery_eligibility: str = ""
+    ):
         with _lock:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 now = datetime.now().isoformat()
                 cursor.execute("""
-                    INSERT INTO job_results (job_id, name, phone, status, error, attachment, timestamp)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (job_id, name, phone, status, error, attachment, now))
+                    INSERT INTO job_results (
+                        job_id, name, phone, status, error, attachment, timestamp,
+                        media_status, text_status, overall_status, last_successful_stage, recovery_eligibility
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    job_id, name, phone, status, error, attachment, now,
+                    media_status, text_status, overall_status or status, last_successful_stage, recovery_eligibility
+                ))
                 conn.commit()
 
     def create_queue_items(self, job_id: str, campaign_id: Optional[int], items: List[Dict[str, Any]]) -> int:
@@ -2071,12 +2119,25 @@ class DatabaseManager:
                 now = datetime.now().isoformat()
                 inserted = 0
                 for item in items:
+                    med_p = item.get("media_path", "")
+                    has_media = bool(med_p and str(med_p).strip())
+                    msg_txt = item.get("resolved_message", "")
+                    has_text = bool(msg_txt and str(msg_txt).strip())
+
+                    med_init = item.get("media_status") or ("PENDING" if has_media else "SKIPPED")
+                    txt_init = item.get("text_status") or ("PENDING" if has_text else "SKIPPED")
+                    ov_init = item.get("overall_status") or item.get("status", "PENDING")
+                    last_st = item.get("last_successful_stage", "none")
+                    rec_el = item.get("recovery_eligibility", "retry_all")
+
                     cursor.execute("""
                         INSERT OR IGNORE INTO campaign_queue_items (
                             campaign_id, job_id, idempotency_key, recipient_name, recipient_phone,
                             variant_id, variant_purpose, resolved_message, media_path, media_asset_id,
-                            allocation_rule, status, retry_count, max_retries, error_message, message_format, created_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            allocation_rule, status, retry_count, max_retries, error_message, message_format,
+                            media_status, text_status, overall_status, last_successful_stage, recovery_eligibility,
+                            created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         campaign_id,
                         job_id,
@@ -2086,14 +2147,19 @@ class DatabaseManager:
                         item.get("variant_id"),
                         item.get("variant_purpose", ""),
                         item["resolved_message"],
-                        item.get("media_path", ""),
+                        med_p,
                         item.get("media_asset_id"),
                         item.get("allocation_rule", ""),
                         item.get("status", "PENDING"),
-                        0,
+                        item.get("retry_count", 0),
                         item.get("max_retries", 3),
                         item.get("error_message", ""),
                         item.get("message_format", "image_with_caption"),
+                        med_init,
+                        txt_init,
+                        ov_init,
+                        last_st,
+                        rec_el,
                         now
                     ))
                     if cursor.rowcount > 0:
@@ -2156,36 +2222,57 @@ class DatabaseManager:
             for r in rows:
                 d = dict(r)
                 st = (d.get("status") or "PENDING").upper()
-                if st in ("DISPATCHED", "SENT"):
+                ov_st = (d.get("overall_status") or st).upper()
+                med_st = (d.get("media_status") or "").upper()
+                txt_st = (d.get("text_status") or "").upper()
+
+                if st in ("DISPATCHED", "SENT") or ov_st == "SENT":
                     d["display_status"] = "SENT"
                     d["delivery_label"] = "Sent (Delivered)"
                     d["delivery_explanation"] = "Message and media successfully submitted to WhatsApp Web and outgoing chat opened."
                     d["read_label"] = "Read not confirmed"
                     d["read_explanation"] = "WhatsApp Web does not broadcast read receipts for external broadcast messages without webhooks."
-                elif st == "UNCERTAIN":
+                    d["recovery_action"] = "none"
+                elif st in ("PARTIAL", "PARTIALLY_SENT") or ov_st in ("PARTIAL", "PARTIALLY_SENT") or (med_st == "SENT" and (txt_st in ("FAILED", "FAILED_MAX_RETRIES", "FAILED_PERMANENT") or d.get("last_successful_stage") == "media" or d.get("recovery_eligibility") == "retry_text_only")):
+                    d["display_status"] = "PARTIALLY_SENT" if st != "PENDING" else "PENDING"
+                    d["delivery_label"] = "Partially Sent (Image Sent, Text Failed)" if st != "PENDING" else "Pending (Retrying Text Only)"
+                    d["delivery_explanation"] = d.get("error_message") or "Image was delivered to recipient, but follow-up text failed."
+                    d["read_label"] = "Partially Delivered"
+                    d["read_explanation"] = "Media was successfully sent; text component failed."
+                    d["recovery_action"] = "retry_text_only"
+                    d["recovery_action_label"] = "Retry Text Only"
+                elif st == "UNCERTAIN" or ov_st == "UNCERTAIN":
                     d["display_status"] = "UNCERTAIN"
                     d["delivery_label"] = "Uncertain Delivery"
                     d["delivery_explanation"] = "Browser timeout or network hiccup during send. Relay prevented duplicate re-send. Verify manually in WhatsApp."
                     d["read_label"] = "Unconfirmed"
                     d["read_explanation"] = "Message transmission outcome could not be verified by browser DOM."
+                    d["recovery_action"] = "reconcile_manual"
+                    d["recovery_action_label"] = "Reconcile / Check WhatsApp"
                 elif "FAIL" in st:
                     d["display_status"] = "FAILED"
                     d["delivery_label"] = "Failed"
                     d["delivery_explanation"] = d.get("error_message") or "Message delivery encountered an error."
                     d["read_label"] = "Not delivered"
                     d["read_explanation"] = "Message was not sent."
+                    d["recovery_action"] = "retry_all"
+                    d["recovery_action_label"] = "Retry Recipient"
                 elif st == "SUPPRESSED":
                     d["display_status"] = "SUPPRESSED"
                     d["delivery_label"] = "Suppressed"
                     d["delivery_explanation"] = "Contact is on suppression or opt-out list."
                     d["read_label"] = "Not sent"
                     d["read_explanation"] = "Safety suppression."
+                    d["recovery_action"] = "none"
                 else:
+                    rec_act = d.get("recovery_eligibility") or "none"
                     d["display_status"] = "PENDING"
                     d["delivery_label"] = "Pending in Queue"
                     d["delivery_explanation"] = "Waiting for dispatch worker turn."
                     d["read_label"] = "Pending"
                     d["read_explanation"] = "Not sent yet."
+                    d["recovery_action"] = rec_act
+                    d["recovery_action_label"] = "Retry Text Only" if rec_act == "retry_text_only" else ("Retry Recipient" if rec_act == "retry_all" else "none")
 
                 if d.get("media_filename"):
                     d["media_thumbnail_url"] = f"/api/media/file/{d['media_filename']}"
@@ -2223,30 +2310,50 @@ class DatabaseManager:
                 return None
             d = dict(row)
             st = (d.get("status") or "PENDING").upper()
-            if st in ("DISPATCHED", "SENT"):
+            ov_st = (d.get("overall_status") or st).upper()
+            med_st = (d.get("media_status") or "").upper()
+            txt_st = (d.get("text_status") or "").upper()
+
+            if st in ("DISPATCHED", "SENT") or ov_st == "SENT":
                 d["display_status"] = "SENT"
                 d["delivery_label"] = "Sent (Delivered)"
                 d["delivery_explanation"] = "Message successfully submitted to WhatsApp Web."
                 d["read_label"] = "Read not confirmed"
                 d["read_explanation"] = "WhatsApp Web does not broadcast read receipts for external broadcast messages."
-            elif st == "UNCERTAIN":
+                d["recovery_action"] = "none"
+            elif st in ("PARTIAL", "PARTIALLY_SENT") or ov_st in ("PARTIAL", "PARTIALLY_SENT") or (med_st == "SENT" and (txt_st in ("FAILED", "FAILED_MAX_RETRIES", "FAILED_PERMANENT") or d.get("last_successful_stage") == "media" or d.get("recovery_eligibility") == "retry_text_only")):
+                d["display_status"] = "PARTIALLY_SENT" if st != "PENDING" else "PENDING"
+                d["delivery_label"] = "Partially Sent (Image Sent, Text Failed)" if st != "PENDING" else "Pending (Retrying Text Only)"
+                d["delivery_explanation"] = d.get("error_message") or "Image was delivered to recipient, but follow-up text failed."
+                d["read_label"] = "Partially Delivered"
+                d["read_explanation"] = "Media was successfully sent; text component failed."
+                d["recovery_action"] = "retry_text_only"
+                d["recovery_action_label"] = "Retry Text Only"
+            elif st == "UNCERTAIN" or ov_st == "UNCERTAIN":
                 d["display_status"] = "UNCERTAIN"
                 d["delivery_label"] = "Uncertain Delivery"
                 d["delivery_explanation"] = "Browser timeout or network hiccup during send. Relay prevented duplicate re-send."
                 d["read_label"] = "Unconfirmed"
                 d["read_explanation"] = "Transmission outcome unconfirmed by DOM."
+                d["recovery_action"] = "reconcile_manual"
+                d["recovery_action_label"] = "Reconcile / Check WhatsApp"
             elif "FAIL" in st:
                 d["display_status"] = "FAILED"
                 d["delivery_label"] = "Failed"
                 d["delivery_explanation"] = d.get("error_message") or "Message delivery encountered an error."
                 d["read_label"] = "Not delivered"
                 d["read_explanation"] = "Message was not sent."
+                d["recovery_action"] = "retry_all"
+                d["recovery_action_label"] = "Retry Recipient"
             else:
+                rec_act = d.get("recovery_eligibility") or "none"
                 d["display_status"] = "PENDING"
                 d["delivery_label"] = "Pending in Queue"
                 d["delivery_explanation"] = "Waiting for dispatch worker turn."
                 d["read_label"] = "Pending"
                 d["read_explanation"] = "Not sent yet."
+                d["recovery_action"] = rec_act
+                d["recovery_action_label"] = "Retry Text Only" if rec_act == "retry_text_only" else ("Retry Recipient" if rec_act == "retry_all" else "none")
 
             if d.get("media_filename"):
                 d["media_thumbnail_url"] = f"/api/media/file/{d['media_filename']}"
@@ -2264,20 +2371,52 @@ class DatabaseManager:
 
             return d
 
-    def reset_queue_item_for_retry(self, item_id: int) -> Optional[Dict[str, Any]]:
-        """Resets a single queue item to PENDING for individual recipient retry."""
+    def reset_queue_item_for_retry(self, item_id: int, mode: str = "auto") -> Optional[Dict[str, Any]]:
+        """
+        Resets a single queue item to PENDING for individual recipient retry.
+        If mode is 'text_only' or if media was already confirmed SENT:
+        Leaves media_status='SENT', last_successful_stage='media', and resets text_status to 'PENDING'.
+        """
         with _lock:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
-                    UPDATE campaign_queue_items
-                    SET status = 'PENDING', error_message = '', retry_count = 0
-                    WHERE id = ?
-                """, (item_id,))
+                cursor.execute("SELECT * FROM campaign_queue_items WHERE id = ?", (item_id,))
+                row = cursor.fetchone()
+                if not row:
+                    return None
+                item = dict(row)
+                med_st = (item.get("media_status") or "").upper()
+                last_stage = item.get("last_successful_stage") or ""
+
+                if mode == "text_only" or (med_st == "SENT" and last_stage in ("media", "partial")):
+                    cursor.execute("""
+                        UPDATE campaign_queue_items
+                        SET status = 'PENDING',
+                            overall_status = 'PENDING',
+                            text_status = 'PENDING',
+                            media_status = 'SENT',
+                            last_successful_stage = 'media',
+                            recovery_eligibility = 'retry_text_only',
+                            error_message = '',
+                            stage_retry_count = COALESCE(stage_retry_count, 0) + 1
+                        WHERE id = ?
+                    """, (item_id,))
+                else:
+                    cursor.execute("""
+                        UPDATE campaign_queue_items
+                        SET status = 'PENDING',
+                            overall_status = 'PENDING',
+                            media_status = CASE WHEN media_path != '' THEN 'PENDING' ELSE 'SKIPPED' END,
+                            text_status = CASE WHEN resolved_message != '' THEN 'PENDING' ELSE 'SKIPPED' END,
+                            last_successful_stage = 'none',
+                            recovery_eligibility = 'retry_all',
+                            error_message = '',
+                            retry_count = 0,
+                            stage_retry_count = 0
+                        WHERE id = ?
+                    """, (item_id,))
                 conn.commit()
-                if cursor.rowcount > 0:
-                    return self.get_recipient_activity_detail(item_id)
-                return None
+                return self.get_recipient_activity_detail(item_id)
 
     def get_queue_items(self, job_id: str, status: Optional[str] = None, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
         with self.get_connection() as conn:
@@ -2298,25 +2437,51 @@ class DatabaseManager:
         status: str,
         error_message: str = "",
         dispatched_at: Optional[str] = None,
-        retry_count: Optional[int] = None
+        retry_count: Optional[int] = None,
+        media_status: Optional[str] = None,
+        text_status: Optional[str] = None,
+        overall_status: Optional[str] = None,
+        last_successful_stage: Optional[str] = None,
+        recovery_eligibility: Optional[str] = None,
+        stage_retry_count: Optional[int] = None
     ):
         with _lock:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 now = datetime.now().isoformat()
-                disp_time = dispatched_at or (now if status == "DISPATCHED" else None)
+                disp_time = dispatched_at or (now if status in ("DISPATCHED", "SENT") else None)
+
+                updates = ["status = ?", "error_message = ?", "dispatched_at = COALESCE(?, dispatched_at)"]
+                params = [status, error_message, disp_time]
+
                 if retry_count is not None:
-                    cursor.execute("""
-                        UPDATE campaign_queue_items
-                        SET status = ?, error_message = ?, dispatched_at = COALESCE(?, dispatched_at), retry_count = ?
-                        WHERE id = ?
-                    """, (status, error_message, disp_time, retry_count, item_id))
+                    updates.append("retry_count = ?")
+                    params.append(retry_count)
+                if media_status is not None:
+                    updates.append("media_status = ?")
+                    params.append(media_status)
+                if text_status is not None:
+                    updates.append("text_status = ?")
+                    params.append(text_status)
+                if overall_status is not None:
+                    updates.append("overall_status = ?")
+                    params.append(overall_status)
                 else:
-                    cursor.execute("""
-                        UPDATE campaign_queue_items
-                        SET status = ?, error_message = ?, dispatched_at = COALESCE(?, dispatched_at)
-                        WHERE id = ?
-                    """, (status, error_message, disp_time, item_id))
+                    updates.append("overall_status = ?")
+                    params.append(status)
+                if last_successful_stage is not None:
+                    updates.append("last_successful_stage = ?")
+                    params.append(last_successful_stage)
+                if recovery_eligibility is not None:
+                    updates.append("recovery_eligibility = ?")
+                    params.append(recovery_eligibility)
+                if stage_retry_count is not None:
+                    updates.append("stage_retry_count = ?")
+                    params.append(stage_retry_count)
+
+                params.append(item_id)
+                sql = f"UPDATE campaign_queue_items SET {', '.join(updates)} WHERE id = ?"
+                cursor.execute(sql, params)
                 conn.commit()
 
     def get_queue_stats(self, job_id: str) -> Dict[str, int]:

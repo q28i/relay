@@ -122,9 +122,16 @@ class WhatsAppWebAdapter(MessagingProvider):
         except Exception as e:
             return {"active": False, "logged_in": False, "status_text": f"Error: {e}"}
 
-    def send_message(self, phone: str, message: str, attachment_path: Optional[str] = None, message_format: str = "image_with_caption", **kwargs) -> Dict[str, Any]:
+    def send_message(self, phone: str, message: str, attachment_path: Optional[str] = None, message_format: str = "image_with_caption", stage: str = "all", **kwargs) -> Dict[str, Any]:
         self._ensure_engine()
-        return self._engine.send_message(phone=phone, message=message, attachment_path=attachment_path, message_format=message_format)
+        return self._engine.send_message(
+            phone=phone,
+            message=message,
+            attachment_path=attachment_path,
+            message_format=message_format,
+            stage=stage,
+            **kwargs
+        )
 
     def send_batch(
         self,
@@ -205,34 +212,98 @@ class MockMessagingProvider(MessagingProvider):
             "current_url": "https://web.whatsapp.com/mock"
         }
 
-    def send_message(self, phone: str, message: str, attachment_path: Optional[str] = None, message_format: str = "image_with_caption", **kwargs) -> Dict[str, Any]:
+    def send_message(self, phone: str, message: str, attachment_path: Optional[str] = None, message_format: str = "image_with_caption", stage: str = "all", **kwargs) -> Dict[str, Any]:
         if self.simulation_delay > 0:
             time.sleep(self.simulation_delay)
+
+        if stage == "text_only":
+            if random.random() < self.failure_rate:
+                return {
+                    "status": "PARTIAL",
+                    "media_status": "SENT",
+                    "text_status": "FAILED",
+                    "overall_status": "PARTIALLY_SENT",
+                    "last_successful_stage": "media",
+                    "recovery_eligibility": "retry_text_only",
+                    "media_sent": True,
+                    "text_sent": False,
+                    "caption_sent": False,
+                    "message_format": message_format,
+                    "error": "Simulated follow-up text transmission timeout"
+                }
+            return {
+                "status": "SENT",
+                "media_status": "SENT",
+                "text_status": "SENT",
+                "overall_status": "SENT",
+                "last_successful_stage": "text",
+                "recovery_eligibility": "none",
+                "media_sent": True,
+                "text_sent": True,
+                "caption_sent": False,
+                "message_format": message_format,
+                "error": None
+            }
+
         if attachment_path:
             if not os.path.isfile(attachment_path):
                 return {
                     "status": "FAILED",
+                    "media_status": "FAILED",
+                    "text_status": "NOT_ATTEMPTED",
+                    "overall_status": "FAILED",
+                    "last_successful_stage": "none",
+                    "recovery_eligibility": "retry_all",
                     "media_sent": False,
                     "caption_sent": False,
+                    "text_sent": False,
                     "error": f"Media file not found: {attachment_path}. No text was sent."
                 }
             try:
                 if os.path.getsize(attachment_path) == 0:
                     return {
                         "status": "FAILED",
+                        "media_status": "FAILED",
+                        "text_status": "NOT_ATTEMPTED",
+                        "overall_status": "FAILED",
+                        "last_successful_stage": "none",
+                        "recovery_eligibility": "retry_all",
                         "media_sent": False,
                         "caption_sent": False,
+                        "text_sent": False,
                         "error": f"Media failed: file is 0 bytes: {attachment_path}. No text was sent."
                     }
             except Exception:
                 pass
+
         if random.random() < self.failure_rate:
-            return {"status": "FAILED", "media_sent": False, "caption_sent": False, "error": "Simulated transmission timeout"}
+            return {
+                "status": "FAILED",
+                "media_status": "FAILED" if attachment_path else "SKIPPED",
+                "text_status": "FAILED",
+                "overall_status": "FAILED",
+                "last_successful_stage": "none",
+                "recovery_eligibility": "retry_all",
+                "media_sent": False,
+                "caption_sent": False,
+                "text_sent": False,
+                "error": "Simulated transmission timeout"
+            }
+
+        has_media = bool(attachment_path)
+        has_text = bool(message and message.strip())
+        is_split = (message_format == "image_then_text")
+
         return {
             "status": "SENT",
-            "media_sent": bool(attachment_path),
-            "caption_sent": bool(attachment_path and message and message_format == "image_with_caption"),
-            "text_sent": bool(message and (not attachment_path or message_format == "image_then_text")),
+            "media_status": "SENT" if has_media else "SKIPPED",
+            "text_status": "SENT" if has_text else "SKIPPED",
+            "overall_status": "SENT",
+            "last_successful_stage": "text" if (is_split and has_text) else ("caption" if (has_media and has_text) else ("media" if has_media else "text")),
+            "recovery_eligibility": "none",
+            "media_sent": has_media,
+            "caption_sent": bool(has_media and has_text and not is_split),
+            "text_sent": bool(has_text and (not has_media or is_split)),
             "message_format": message_format,
             "error": None
         }
@@ -320,3 +391,9 @@ class MockMessagingProvider(MessagingProvider):
 
     def close(self):
         self._is_active = False
+
+
+# Aliases for backward compatibility and test conventions
+BrowserEngineAdapter = WhatsAppWebAdapter
+MockWhatsAppEngine = MockMessagingProvider
+
