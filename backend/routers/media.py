@@ -46,8 +46,8 @@ def list_media_assets(asset_type: Optional[str] = Query(None)):
 @router.post("/upload")
 async def upload_media_asset(
     file: UploadFile = File(...),
-    title: str = Form(...),
-    asset_type: str = Form("image"),
+    title: Optional[str] = Form(None),
+    asset_type: Optional[str] = Form(None),
     approval_status: str = Form("approved")
 ):
     """
@@ -56,6 +56,11 @@ async def upload_media_asset(
     """
     filename = file.filename or "media"
     ext = os.path.splitext(filename)[1].lower()
+    if not title:
+        title = os.path.splitext(filename)[0] or filename
+    if not asset_type:
+        asset_type = "image" if ext in (".jpg", ".jpeg", ".png", ".webp", ".gif") else "document"
+
     if ext not in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".pdf", ".docx", ".mp4", ".txt"):
         raise HTTPException(status_code=400, detail=f"Unsupported media file extension '{ext}'")
 
@@ -139,6 +144,8 @@ class BulkDeleteMediaRequest(BaseModel):
 
 
 @router.post("/bulk-delete")
+@router.delete("/bulk-delete")
+@router.delete("")
 def bulk_delete_media_assets(payload: BulkDeleteMediaRequest):
     """Permanently deletes multiple media assets in bulk."""
     deleted_count = 0

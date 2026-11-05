@@ -191,6 +191,11 @@ class BackgroundJobWorker:
                 if m_set:
                     eligible_set_media = [it for it in m_set.get("items", []) if it.get("is_included", 1) == 1]
 
+            # Unified Template Active Assets and Variations
+            tpl_active_texts = [tv for tv in template.get("text_variations", []) if tv.get("is_active", 1)] if template else []
+            tpl_active_media = [ma for ma in template.get("media_assets", []) if ma.get("is_active", 1)] if template else []
+            tpl_mode = template.get("content_selection_mode", "mix_variations") if template else "mix_variations"
+
             # If explicit alternatives exist beyond the auto-created Primary Variant, use those for rotation / AB testing
             rotation_variants = [v for v in approved_variants if v.get("variant_name") != "Primary Variant"]
             if not rotation_variants:
@@ -208,10 +213,25 @@ class BackgroundJobWorker:
                 phone = str(c.get("phone", "")).strip()
                 name = c.get("name", "Customer")
 
+                content_template = template_content or (template.get("content") if template else "")
+                item_media_asset_id = media_asset_id
                 chosen_variant = None
                 allocation_rule = ""
 
-                if eligible_set_texts or eligible_set_media:
+                if (tpl_active_texts or tpl_active_media) and allocation_method not in ("rule_based", "balanced_rotation", "reproducible_ab_test"):
+                    if tpl_mode == "same_for_everyone":
+                        content_template = tpl_active_texts[0]["content"] if tpl_active_texts else template_content
+                        item_media_asset_id = tpl_active_media[0]["id"] if tpl_active_media else media_asset_id
+                        allocation_rule = "Template Fixed (Same for Everyone)"
+                    else:
+                        text_idx = int(hashlib.md5(f"{allocation_seed}:text:{phone}".encode("utf-8")).hexdigest(), 16) if tpl_active_texts else 0
+                        media_idx = int(hashlib.md5(f"{allocation_seed}:media:{phone}".encode("utf-8")).hexdigest(), 16) if tpl_active_media else 0
+                        content_template = tpl_active_texts[text_idx % len(tpl_active_texts)]["content"] if tpl_active_texts else template_content
+                        item_media_asset_id = tpl_active_media[media_idx % len(tpl_active_media)]["id"] if tpl_active_media else media_asset_id
+                        allocation_rule = f"Template Mix Variations (Seed {allocation_seed})"
+                    variant_id = None
+                    variant_purpose = ""
+                elif eligible_set_texts or eligible_set_media:
                     if eligible_set_texts:
                         chosen_text = eligible_set_texts[idx % len(eligible_set_texts)]
                         content_template = chosen_text.get("content", "")
@@ -272,7 +292,7 @@ class BackgroundJobWorker:
                     chosen_variant = rotation_variants[h % len(rotation_variants)]
                     allocation_rule = f"Reproducible A/B test (seed={allocation_seed}): variant #{chosen_variant['id']} ({chosen_variant['variant_name']})"
 
-                if not collection:
+                if not collection and allocation_method in ("rule_based", "balanced_rotation", "reproducible_ab_test", "explicit_default"):
                     if not chosen_variant:
                         if approved_variants and allocation_method == "explicit_default":
                             chosen_variant = approved_variants[0]
@@ -285,7 +305,7 @@ class BackgroundJobWorker:
                         variant_purpose = chosen_variant.get("purpose", "")
                         content_template = chosen_variant.get("content", "")
                         item_media_asset_id = chosen_variant.get("media_asset_id") or media_asset_id
-                    else:
+                    elif not (tpl_active_texts or tpl_active_media) and not (eligible_set_texts or eligible_set_media):
                         variant_id = None
                         variant_purpose = ""
                         content_template = c.get("message") or template_content or (template.get("content") if template else "")

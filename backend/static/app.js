@@ -6,7 +6,15 @@
 
 class WhatsAppDashboardApp {
   constructor() {
-    this.currentTab = 'dashboard';
+    this.currentTab = 'templates';
+    this.activeTemplateId = null;
+    this.activeTemplate = null;
+    this.templateSelectedContactIds = new Set();
+    this.templateSelectedMediaIds = new Set();
+    this.selectedMediaLibraryIds = new Set();
+    this.mediaLibraryFilter = 'all';
+    this.cachedTemplates = [];
+    this.activeAssignments = [];
     this.viewingSuppression = false;
     this.activityFilter = 'ALL';
     this.selectedDraftId = null;
@@ -290,6 +298,8 @@ class WhatsAppDashboardApp {
   }
 
   navigate(tabName) {
+    if (tabName === 'dashboard' || tabName === 'messages') tabName = 'templates';
+    if (tabName === 'activity') tabName = 'campaigns';
     this.currentTab = tabName;
     document.querySelectorAll('.app-sidebar .nav-link').forEach(btn => {
       btn.classList.toggle('active', btn.getAttribute('data-tab') === tabName);
@@ -299,22 +309,20 @@ class WhatsAppDashboardApp {
     });
 
     const titles = {
-      dashboard: 'Dashboard',
+      templates: 'Templates',
       contacts: 'Contacts',
-      messages: 'Messages',
+      media: 'Media Library',
       campaigns: 'Campaigns',
-      activity: 'Activity',
       settings: 'Settings'
     };
     const heading = document.getElementById('page-heading');
-    if (heading) heading.textContent = titles[tabName] || 'Dashboard';
+    if (heading) heading.textContent = titles[tabName] || 'Templates';
 
     // Lazy load tab contents
-    if (tabName === 'dashboard') this.loadDashboardData();
+    if (tabName === 'templates') this.loadTemplates();
     if (tabName === 'contacts') this.loadContacts();
-    if (tabName === 'messages') this.loadMessages();
-    if (tabName === 'campaigns') this.loadCampaignSetup();
-    if (tabName === 'activity') this.loadActivityData();
+    if (tabName === 'media') this.loadMediaLibrary();
+    if (tabName === 'campaigns') this.loadCampaignsData();
     if (tabName === 'settings') this.loadSettingsData();
   }
 
@@ -436,7 +444,7 @@ class WhatsAppDashboardApp {
   // --- Initial Data Load ---
   async loadInitialData() {
     await this.loadBrowserConnection();
-    await this.loadDashboardData();
+    await this.loadTemplates();
   }
 
   // ==========================================================================
@@ -2700,6 +2708,7 @@ class WhatsAppDashboardApp {
       const file = files[i];
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('title', file.name || 'Image');
       try {
         const uploadRes = await fetch('/api/media/upload', {
           method: 'POST',
@@ -6235,7 +6244,1599 @@ class WhatsAppDashboardApp {
     const el = document.getElementById(modalId);
     if (el) el.classList.remove('active');
   }
+
+  // ==========================================================================
+  // SECTION: UNIFIED TEMPLATES & BULK MESSAGING WORKFLOW
+  // ==========================================================================
+
+  // --- Format file size helper ---
+  formatBytes(bytes) {
+    if (!bytes || isNaN(bytes) || bytes <= 0) return '0 KB';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
+
+  // --- Load all templates ---
+  async loadTemplates(search = '') {
+    try {
+      const templates = await this.api('/api/templates', { silent: true }).catch(() => []);
+      this.cachedTemplates = templates || [];
+      this.renderTemplatesGrid(this.cachedTemplates, search);
+    } catch (e) {
+      console.error('Failed to load templates:', e);
+    }
+  }
+
+  filterTemplatesList(query = '') {
+    const q = (query || (document.getElementById('tpl-search-input') ? document.getElementById('tpl-search-input').value : '')).toLowerCase().trim();
+    const grpFilter = document.getElementById('tpl-group-filter') ? document.getElementById('tpl-group-filter').value : 'All';
+
+    let filtered = this.cachedTemplates || [];
+    if (q) {
+      filtered = filtered.filter(t => (t.name || '').toLowerCase().includes(q) || (t.description || '').toLowerCase().includes(q));
+    }
+    if (grpFilter && grpFilter !== 'All') {
+      filtered = filtered.filter(t => (t.target_group || 'All') === grpFilter);
+    }
+    this.renderTemplatesGrid(filtered, q, false);
+  }
+
+  renderTemplatesGrid(templates, searchQuery = '', updateFilterOptions = true) {
+    const emptyState = document.getElementById('templates-empty-state');
+    const grid = document.getElementById('templates-grid');
+    const groupSelect = document.getElementById('tpl-group-filter');
+
+    if (updateFilterOptions && groupSelect) {
+      const groups = new Set(['All']);
+      (this.cachedTemplates || []).forEach(t => {
+        if (t.target_group) groups.add(t.target_group);
+      });
+      const cur = groupSelect.value;
+      groupSelect.innerHTML = Array.from(groups).map(g => `<option value="${this.escapeHtml(g)}">${this.escapeHtml(g === 'All' ? 'All Audiences' : g)}</option>`).join('');
+      if (groups.has(cur)) groupSelect.value = cur;
+    }
+
+    if (!templates || templates.length === 0) {
+      if (grid) grid.innerHTML = '';
+      if (emptyState) {
+        emptyState.style.display = 'flex';
+        if (searchQuery) {
+          emptyState.querySelector('.clean-empty-title').textContent = 'No matching templates';
+          emptyState.querySelector('.clean-empty-subtitle').textContent = `No templates match '${searchQuery}'.`;
+        } else {
+          emptyState.querySelector('.clean-empty-title').textContent = 'No templates yet.';
+          emptyState.querySelector('.clean-empty-subtitle').textContent = 'Create your first template to add contacts, images, and messages.';
+        }
+      }
+      return;
+    }
+
+    if (emptyState) emptyState.style.display = 'none';
+    if (!grid) return;
+
+    grid.innerHTML = templates.map(t => {
+      const isMix = t.content_selection_mode === 'mix_variations';
+      const modeLabel = isMix ? 'Mix Variations (Randomiser)' : 'Same for Everyone';
+      const modeBadgeClass = isMix ? 'badge-primary' : 'badge-neutral';
+      const activeTexts = t.active_texts_count !== undefined ? t.active_texts_count : (t.text_variations ? t.text_variations.filter(x => x.is_active).length : 0);
+      const activeMedia = t.active_media_count !== undefined ? t.active_media_count : (t.media_assets ? t.media_assets.filter(x => x.is_active).length : 0);
+      const eligibleContacts = t.eligible_recipients_count !== undefined ? t.eligible_recipients_count : (t.recipients_count || 0);
+
+      return `
+        <div class="template-card" data-template-id="${t.id}">
+          <div class="template-card-header">
+            <div>
+              <h3 class="template-card-title">${this.escapeHtml(t.name || 'Untitled Template')}</h3>
+              <p class="template-card-desc">${this.escapeHtml(t.description || 'No description provided')}</p>
+            </div>
+            <span class="badge ${modeBadgeClass}" style="font-size: 0.72rem;">${modeLabel}</span>
+          </div>
+
+          <div class="template-card-stats">
+            <div class="template-stat-item" title="Active message variations">
+              <span>💬</span>
+              <strong>${activeTexts}</strong> variations
+            </div>
+            <div class="template-stat-item" title="Attached media files">
+              <span>📎</span>
+              <strong>${activeMedia}</strong> media
+            </div>
+            <div class="template-stat-item" title="Eligible contacts in audience">
+              <span>👥</span>
+              <strong>${eligibleContacts}</strong> contacts (${this.escapeHtml(t.target_group || 'All')})
+            </div>
+          </div>
+
+          <div class="template-card-footer">
+            <div style="display: flex; gap: 0.35rem;">
+              <button type="button" class="btn btn-primary btn-sm" onclick="app.openTemplateEditor(${t.id})">
+                Open / Edit
+              </button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="app.openReviewSendModal(${t.id})" title="Review and launch broadcast">
+                Review & Send
+              </button>
+            </div>
+            <div style="display: flex; gap: 0.25rem;">
+              <button type="button" class="btn btn-subtle btn-xs" onclick="app.duplicateTemplate(${t.id})" title="Duplicate template">
+                Copy
+              </button>
+              <button type="button" class="btn btn-subtle btn-xs" onclick="app.exportTemplate(${t.id})" title="Export template JSON">
+                Export
+              </button>
+              <button type="button" class="btn btn-subtle btn-xs text-danger" onclick="app.deleteTemplate(${t.id}, '${this.escapeHtml(t.name)}')" title="Delete template">
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // --- Create New Template Modal ---
+  openNewTemplateModal() {
+    const nameInput = document.getElementById('new-tpl-name');
+    const descInput = document.getElementById('new-tpl-desc');
+    const modeSelect = document.getElementById('new-tpl-mode');
+    const groupSelect = document.getElementById('new-tpl-group');
+
+    if (nameInput) nameInput.value = '';
+    if (descInput) descInput.value = '';
+    if (modeSelect) modeSelect.value = 'mix_variations';
+
+    if (groupSelect && this.availableGroups) {
+      groupSelect.innerHTML = '<option value="All">All Contacts</option>' +
+        this.availableGroups.map(g => `<option value="${this.escapeHtml(g.name)}">${this.escapeHtml(g.name)}</option>`).join('');
+    }
+
+    this.openModal('modal-new-template');
+    setTimeout(() => { if (nameInput) nameInput.focus(); }, 100);
+  }
+
+  async submitNewTemplate() {
+    const nameInput = document.getElementById('new-tpl-name');
+    const descInput = document.getElementById('new-tpl-desc');
+    const modeSelect = document.getElementById('new-tpl-mode');
+    const groupSelect = document.getElementById('new-tpl-group');
+
+    const name = nameInput ? nameInput.value.trim() : '';
+    if (!name) {
+      this.showToast('Please enter a template name', 'warning');
+      return;
+    }
+
+    try {
+      const payload = {
+        name: name,
+        description: descInput ? descInput.value.trim() : '',
+        content: 'Hello {first_name}, ',
+        content_selection_mode: modeSelect ? modeSelect.value : 'mix_variations',
+        target_group: groupSelect ? groupSelect.value : 'All'
+      };
+
+      const res = await this.api('/api/templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      this.closeModal('modal-new-template');
+      this.showToast(`Template '${name}' created!`, 'success');
+      await this.loadTemplates();
+      if (res && res.id) {
+        await this.openTemplateEditor(res.id);
+      }
+    } catch (e) {
+      console.error('Failed to create template:', e);
+    }
+  }
+
+  // --- Import Template ---
+  openImportTemplateModal() {
+    const fileInput = document.getElementById('import-tpl-file');
+    const jsonInput = document.getElementById('import-tpl-json');
+    if (fileInput) fileInput.value = '';
+    if (jsonInput) jsonInput.value = '';
+    this.openModal('modal-import-template');
+  }
+
+  onTemplateFileSelected(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const jsonInput = document.getElementById('import-tpl-json');
+      if (jsonInput) jsonInput.value = e.target.result;
+    };
+    reader.readAsText(file);
+  }
+
+  async submitImportTemplate() {
+    const jsonInput = document.getElementById('import-tpl-json');
+    const raw = jsonInput ? jsonInput.value.trim() : '';
+    if (!raw) {
+      this.showToast('Please select a JSON file or paste JSON content', 'warning');
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      const res = await this.api('/api/templates/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(parsed)
+      });
+
+      this.closeModal('modal-import-template');
+      this.showToast(`Template '${res.name}' imported successfully!`, 'success');
+      await this.loadTemplates();
+      if (res.id) {
+        await this.openTemplateEditor(res.id);
+      }
+    } catch (e) {
+      this.showToast(`Import failed: ${e.message}`, 'error');
+    }
+  }
+
+  // --- Export Template ---
+  async exportTemplate(templateId) {
+    try {
+      const t = await this.api(`/api/templates/${templateId}/export`);
+      const blob = new Blob([JSON.stringify(t, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `template_${(t.name || 'export').replace(/\s+/g, '_').toLowerCase()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      this.showToast(`Exported template '${t.name}'`, 'info');
+    } catch (e) {
+      console.error('Failed to export template:', e);
+    }
+  }
+
+  // --- Duplicate Template ---
+  async duplicateTemplate(templateId) {
+    try {
+      const res = await this.api(`/api/templates/${templateId}/duplicate`, { method: 'POST' });
+      this.showToast(`Duplicated to '${res.name}'`, 'success');
+      await this.loadTemplates();
+      if (res.id) {
+        await this.openTemplateEditor(res.id);
+      }
+    } catch (e) {
+      console.error('Failed to duplicate template:', e);
+    }
+  }
+
+  // --- Delete Template ---
+  async deleteTemplate(templateId, name) {
+    if (!confirm(`Are you sure you want to delete template '${name}'?\n\nHistorical campaign reports will be safely preserved.`)) {
+      return;
+    }
+
+    try {
+      await this.api(`/api/templates/${templateId}`, { method: 'DELETE' });
+      this.showToast(`Template '${name}' deleted`, 'info');
+      await this.loadTemplates();
+      if (this.activeTemplateId === templateId) {
+        this.closeTemplateEditor();
+      }
+    } catch (e) {
+      console.error('Failed to delete template:', e);
+    }
+  }
+
+  // --- Open Template Editor ---
+  async openTemplateEditor(templateId) {
+    try {
+      this.activeTemplateId = templateId;
+      const t = await this.api(`/api/templates/${templateId}`);
+      this.activeTemplate = t;
+
+      const listView = document.getElementById('template-list-view');
+      const editorView = document.getElementById('template-editor-view');
+      if (listView) listView.style.display = 'none';
+      if (editorView) editorView.style.display = 'block';
+
+      // 1. Populate topbar
+      const nameInput = document.getElementById('tpl-edit-name-input');
+      if (nameInput) nameInput.value = t.name || '';
+
+      const mode = t.content_selection_mode || 'mix_variations';
+      const btnMix = document.getElementById('btn-mode-mix');
+      const btnSame = document.getElementById('btn-mode-same');
+      if (btnMix) btnMix.classList.toggle('active', mode === 'mix_variations');
+      if (btnSame) btnSame.classList.toggle('active', mode === 'same_for_everyone');
+
+      this.updateTemplateEditorConnectionPill();
+
+      // 2. Render Sections
+      await this.renderTemplateContacts(t);
+      this.renderTemplateMedia(t);
+      this.renderTemplateTexts(t);
+
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (e) {
+      console.error('Failed to open template editor:', e);
+      this.showToast('Could not load template details', 'error');
+    }
+  }
+
+  closeTemplateEditor() {
+    this.activeTemplateId = null;
+    this.activeTemplate = null;
+    const listView = document.getElementById('template-list-view');
+    const editorView = document.getElementById('template-editor-view');
+    if (listView) listView.style.display = 'block';
+    if (editorView) editorView.style.display = 'none';
+    this.loadTemplates();
+  }
+
+  updateTemplateEditorConnectionPill() {
+    const pill = document.getElementById('tpl-editor-conn-pill');
+    const dot = document.getElementById('tpl-editor-conn-dot');
+    const text = document.getElementById('tpl-editor-conn-text');
+    if (!pill || !dot || !text) return;
+
+    const isConnected = this.currentSessionState === 'connected' || this.isWhatsAppConnected;
+    if (isConnected) {
+      dot.className = 'status-indicator online';
+      text.textContent = 'Connection: Ready';
+      pill.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+    } else {
+      dot.className = 'status-indicator offline';
+      text.textContent = 'Connection: Action required';
+      pill.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+    }
+  }
+
+  async saveActiveTemplateMeta() {
+    if (!this.activeTemplateId) return;
+    const nameInput = document.getElementById('tpl-edit-name-input');
+    const newName = nameInput ? nameInput.value.trim() : '';
+    if (!newName) return;
+
+    try {
+      await this.api(`/api/templates/${this.activeTemplateId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName })
+      });
+      if (this.activeTemplate) this.activeTemplate.name = newName;
+      this.showToast('Template renamed', 'info');
+    } catch (e) {
+      console.error('Failed to rename template:', e);
+    }
+  }
+
+  async setActiveTemplateMode(mode) {
+    if (!this.activeTemplateId) return;
+    try {
+      await this.api(`/api/templates/${this.activeTemplateId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content_selection_mode: mode })
+      });
+      if (this.activeTemplate) this.activeTemplate.content_selection_mode = mode;
+
+      const btnMix = document.getElementById('btn-mode-mix');
+      const btnSame = document.getElementById('btn-mode-same');
+      if (btnMix) btnMix.classList.toggle('active', mode === 'mix_variations');
+      if (btnSame) btnSame.classList.toggle('active', mode === 'same_for_everyone');
+
+      const label = mode === 'mix_variations' ? 'Mix Variations (1 media + 1 text assigned per recipient)' : 'Same for Everyone (1 media + 1 text to all)';
+      this.showToast(`Content selection set to: ${label}`, 'info');
+    } catch (e) {
+      console.error('Failed to set template mode:', e);
+    }
+  }
+
+  async duplicateActiveTemplate() {
+    if (this.activeTemplateId) {
+      await this.duplicateTemplate(this.activeTemplateId);
+    }
+  }
+
+  async deleteActiveTemplate() {
+    if (this.activeTemplateId && this.activeTemplate) {
+      await this.deleteTemplate(this.activeTemplateId, this.activeTemplate.name);
+    }
+  }
+
+  // ==========================================================================
+  // SECTION A: CONTACTS IN TEMPLATE EDITOR
+  // ==========================================================================
+  async onTemplateAudienceChange(groupName) {
+    if (!this.activeTemplateId) return;
+    try {
+      await this.api(`/api/templates/${this.activeTemplateId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target_group: groupName })
+      });
+      if (this.activeTemplate) this.activeTemplate.target_group = groupName;
+      await this.renderTemplateContacts(this.activeTemplate);
+    } catch (e) {
+      console.error('Failed to update audience group:', e);
+    }
+  }
+
+  async renderTemplateContacts(template) {
+    const groupSelect = document.getElementById('tpl-contact-group-select');
+    if (groupSelect) {
+      const groups = await this.api('/api/contacts/groups', { silent: true }).catch(() => []);
+      this.availableGroups = groups || [];
+      groupSelect.innerHTML = '<option value="All">All Contacts</option>' +
+        groups.map(g => `<option value="${this.escapeHtml(g.name)}" ${template.target_group === g.name ? 'selected' : ''}>${this.escapeHtml(g.name)} (${g.contact_count || 0})</option>`).join('');
+    }
+
+    const targetGrp = template.target_group || 'All';
+    const resp = await this.api(`/api/contacts?limit=5000${targetGrp !== 'All' ? '&group_name=' + encodeURIComponent(targetGrp) : ''}`, { silent: true }).catch(() => []);
+    const contacts = Array.isArray(resp) ? resp : (resp && resp.items ? resp.items : []);
+    this.allTemplateContacts = contacts || [];
+
+    const total = contacts.length;
+    const eligible = contacts.filter(c => c.consent_status !== 'opted_out');
+    const excluded = total - eligible.length;
+
+    // Default select all eligible
+    this.templateSelectedContactIds = new Set(eligible.map(c => c.id));
+
+    const cntTotal = document.getElementById('tpl-cnt-total');
+    const cntEligible = document.getElementById('tpl-cnt-eligible');
+    const cntExcluded = document.getElementById('tpl-cnt-excluded');
+    const cntIncluded = document.getElementById('tpl-cnt-included');
+
+    if (cntTotal) cntTotal.textContent = total;
+    if (cntEligible) cntEligible.textContent = eligible.length;
+    if (cntExcluded) cntExcluded.textContent = excluded;
+    if (cntIncluded) cntIncluded.textContent = this.templateSelectedContactIds.size;
+
+    this.renderTemplateContactsTable(contacts);
+  }
+
+  filterTemplateContacts(search = '') {
+    const q = (search || (document.getElementById('tpl-contacts-search') ? document.getElementById('tpl-contacts-search').value : '')).toLowerCase().trim();
+    let filtered = this.allTemplateContacts || [];
+    if (q) {
+      filtered = filtered.filter(c => (c.name || '').toLowerCase().includes(q) || (c.phone || '').includes(q));
+    }
+    this.renderTemplateContactsTable(filtered);
+  }
+
+  renderTemplateContactsTable(contacts) {
+    const tbody = document.getElementById('tpl-contacts-tbody');
+    const masterChk = document.getElementById('chk-master-tpl-contacts');
+    if (!tbody) return;
+
+    if (!contacts || contacts.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">No contacts found in selected audience. Click 'Import CSV/Excel' or 'Paste Numbers' to add contacts.</td></tr>`;
+      if (masterChk) { masterChk.checked = false; masterChk.indeterminate = false; }
+      return;
+    }
+
+    let allChecked = true;
+    let someChecked = false;
+
+    tbody.innerHTML = contacts.map(c => {
+      const isChecked = this.templateSelectedContactIds.has(c.id);
+      const isOptedOut = c.consent_status === 'opted_out';
+      if (isChecked) someChecked = true;
+      else allChecked = false;
+
+      const consentBadge = isOptedOut
+        ? `<span class="badge badge-warning" style="font-size: 0.7rem;">Opted Out</span>`
+        : `<span class="badge badge-success" style="font-size: 0.7rem;">Opted In</span>`;
+
+      return `
+        <tr style="${isOptedOut ? 'opacity: 0.6;' : ''}">
+          <td style="text-align: center;">
+            <input type="checkbox" style="cursor: pointer; accent-color: var(--primary);" ${isChecked ? 'checked' : ''} onchange="app.toggleTemplateContact(${c.id}, this.checked)">
+          </td>
+          <td><strong>${this.escapeHtml(c.name || 'Unnamed')}</strong></td>
+          <td style="font-family: var(--font-mono); font-size: 0.75rem;">+${this.escapeHtml(c.phone || '')}</td>
+          <td><span class="badge badge-neutral" style="font-size: 0.7rem;">${this.escapeHtml(c.group_name || 'Default')}</span></td>
+          <td>${consentBadge}</td>
+        </tr>
+      `;
+    }).join('');
+
+    if (masterChk) {
+      masterChk.checked = allChecked && contacts.length > 0;
+      masterChk.indeterminate = someChecked && !allChecked;
+    }
+  }
+
+  toggleTemplateContact(contactId, checked) {
+    if (checked) {
+      this.templateSelectedContactIds.add(contactId);
+    } else {
+      this.templateSelectedContactIds.delete(contactId);
+    }
+    const cntIncluded = document.getElementById('tpl-cnt-included');
+    if (cntIncluded) cntIncluded.textContent = this.templateSelectedContactIds.size;
+
+    const masterChk = document.getElementById('chk-master-tpl-contacts');
+    if (masterChk) {
+      const total = (this.allTemplateContacts || []).length;
+      const sel = this.templateSelectedContactIds.size;
+      masterChk.checked = sel > 0 && sel === total;
+      masterChk.indeterminate = sel > 0 && sel < total;
+    }
+  }
+
+  toggleMasterTemplateContacts(checked) {
+    this.selectAllTemplateContacts(checked);
+  }
+
+  selectAllTemplateContacts(selectAll) {
+    if (selectAll) {
+      (this.allTemplateContacts || []).forEach(c => {
+        if (c.consent_status !== 'opted_out') this.templateSelectedContactIds.add(c.id);
+      });
+    } else {
+      this.templateSelectedContactIds.clear();
+    }
+    const cntIncluded = document.getElementById('tpl-cnt-included');
+    if (cntIncluded) cntIncluded.textContent = this.templateSelectedContactIds.size;
+    this.renderTemplateContactsTable(this.allTemplateContacts || []);
+  }
+
+  // ==========================================================================
+  // SECTION B: MEDIA ASSETS IN TEMPLATE EDITOR
+  // ==========================================================================
+  renderTemplateMedia(template) {
+    const grid = document.getElementById('tpl-media-grid');
+    const badge = document.getElementById('tpl-media-count-badge');
+    const emptyNotice = document.getElementById('tpl-media-empty-notice');
+    const bulkBar = document.getElementById('tpl-media-bulk-bar');
+
+    const assets = template.media_assets || [];
+    if (badge) badge.textContent = `${assets.length} assets`;
+
+    this.templateSelectedMediaIds.clear();
+    if (bulkBar) bulkBar.style.display = 'none';
+
+    if (assets.length === 0) {
+      if (grid) grid.innerHTML = '';
+      if (emptyNotice) emptyNotice.style.display = 'block';
+      return;
+    }
+
+    if (emptyNotice) emptyNotice.style.display = 'none';
+    if (!grid) return;
+
+    grid.innerHTML = assets.map(m => {
+      const isExcluded = m.is_active === 0;
+      const isSelected = this.templateSelectedMediaIds.has(m.id);
+      const isImg = (m.mime_type || '').startsWith('image/');
+      const isVid = (m.mime_type || '').startsWith('video/');
+      const isPdf = (m.mime_type || '') === 'application/pdf';
+
+      let thumbMarkup = '';
+      if (isImg && m.id) {
+        thumbMarkup = `<img src="/api/media/${m.id}/file" alt="${this.escapeHtml(m.filename)}" style="cursor: pointer;" onclick="app.openMediaPreviewModal(${m.id})">`;
+      } else {
+        const icon = isPdf ? '📄 PDF' : (isVid ? '🎬 Video' : '📎 File');
+        thumbMarkup = `<div style="font-weight: 700; color: var(--text-muted); cursor: pointer;" onclick="app.openMediaPreviewModal(${m.id})">${icon}</div>`;
+      }
+
+      return `
+        <div class="media-set-card-item ${isExcluded ? 'excluded' : ''} ${isSelected ? 'selected' : ''}" id="tpl-media-card-${m.id}">
+          <div class="media-set-card-header">
+            <input type="checkbox" style="cursor: pointer; accent-color: var(--primary);" onchange="app.toggleSelectTemplateMedia(${m.id}, this.checked)">
+            <label style="display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.72rem; cursor: pointer; user-select: none;">
+              <input type="checkbox" ${!isExcluded ? 'checked' : ''} style="cursor: pointer; accent-color: var(--primary);" onchange="app.toggleTemplateMediaActive(${m.id}, this.checked)">
+              <span>${!isExcluded ? 'Active' : 'Excluded'}</span>
+            </label>
+          </div>
+
+          <div class="media-set-thumb-box">
+            ${thumbMarkup}
+          </div>
+
+          <div class="media-set-card-title" title="${this.escapeHtml(m.filename)}">
+            ${this.escapeHtml(m.filename)}
+          </div>
+
+          <div class="media-set-card-meta">
+            <span>${this.formatBytes(m.file_size)}</span>
+            <span>${(m.mime_type || '').split('/')[1] || 'FILE'}</span>
+          </div>
+
+          <div class="media-set-card-actions">
+            <button type="button" class="btn btn-subtle btn-xs" onclick="app.openMediaPreviewModal(${m.id})">Preview</button>
+            <button type="button" class="btn btn-subtle btn-xs" onclick="app.removeMediaFromTemplate(${m.id})" title="Remove from this template">Remove</button>
+            <button type="button" class="btn btn-subtle btn-xs text-danger" onclick="app.deleteMediaPermanently(${m.id}, '${this.escapeHtml(m.filename)}')" title="Delete from disk and library">Delete</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  async onTemplateMediaFilesSelected(e) {
+    const files = e.target.files;
+    if (!files || files.length === 0 || !this.activeTemplateId) return;
+
+    const assetIds = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('title', file.name || 'Image');
+      try {
+        const res = await fetch('/api/media/upload', { method: 'POST', body: formData });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.id) assetIds.push(data.id);
+        }
+      } catch (err) {
+        console.error('File upload failed:', err);
+      }
+    }
+
+    if (assetIds.length > 0) {
+      await this.api(`/api/templates/${this.activeTemplateId}/media`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ asset_ids: assetIds, media_asset_ids: assetIds })
+      });
+      this.showToast(`Attached ${assetIds.length} media file(s) to template`, 'success');
+      const updated = await this.api(`/api/templates/${this.activeTemplateId}`);
+      this.activeTemplate = updated;
+      this.renderTemplateMedia(updated);
+    }
+    e.target.value = '';
+  }
+
+  async openTemplateMediaPickerModal() {
+    try {
+      const assets = await this.api('/api/media', { silent: true }).catch(() => []);
+      const pickerList = document.getElementById('tpl-media-picker-list');
+      if (!pickerList) return;
+
+      this.pickerSelectedAssetIds = new Set();
+      const existingIds = new Set((this.activeTemplate && this.activeTemplate.media_assets || []).map(m => m.id));
+
+      if (!assets || assets.length === 0) {
+        pickerList.innerHTML = `<div style="text-align: center; padding: 2rem; color: var(--text-muted);">No uploaded media found in library. Use '+ Upload Media' to add files.</div>`;
+      } else {
+        pickerList.innerHTML = `
+          <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 0.75rem;">
+            ${assets.map(a => {
+              const alreadyAttached = existingIds.has(a.id);
+              const isImg = (a.mime_type || '').startsWith('image/');
+              return `
+                <div style="border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.5rem; background: var(--bg-surface); opacity: ${alreadyAttached ? '0.5' : '1'};">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                    <input type="checkbox" style="cursor: pointer; accent-color: var(--primary);" ${alreadyAttached ? 'disabled checked' : ''} onchange="app.togglePickerAsset(${a.id}, this.checked)">
+                    <span style="font-size: 0.65rem; color: var(--text-muted);">${alreadyAttached ? 'Attached' : ''}</span>
+                  </div>
+                  <div style="width: 100%; height: 75px; background: var(--surface-subtle); display: flex; align-items: center; justify-content: center; overflow: hidden; border-radius: var(--radius-xs);">
+                    ${isImg ? `<img src="/api/media/${a.id}/file" style="width: 100%; height: 100%; object-fit: cover;">` : `<span>📎</span>`}
+                  </div>
+                  <div style="font-size: 0.72rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 0.25rem;">
+                    ${this.escapeHtml(a.filename)}
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `;
+      }
+
+      this.openModal('modal-template-media-picker');
+    } catch (e) {
+      console.error('Failed to open media picker:', e);
+    }
+  }
+
+  togglePickerAsset(assetId, checked) {
+    this.pickerSelectedAssetIds = this.pickerSelectedAssetIds || new Set();
+    if (checked) this.pickerSelectedAssetIds.add(assetId);
+    else this.pickerSelectedAssetIds.delete(assetId);
+
+    const countLabel = document.getElementById('tpl-media-picker-selected-count');
+    if (countLabel) countLabel.textContent = `${this.pickerSelectedAssetIds.size} selected`;
+  }
+
+  async confirmAddMediaToTemplate() {
+    if (!this.pickerSelectedAssetIds || this.pickerSelectedAssetIds.size === 0 || !this.activeTemplateId) {
+      this.closeModal('modal-template-media-picker');
+      return;
+    }
+
+    try {
+      const arr = Array.from(this.pickerSelectedAssetIds);
+      await this.api(`/api/templates/${this.activeTemplateId}/media`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ asset_ids: arr, media_asset_ids: arr })
+      });
+      this.closeModal('modal-template-media-picker');
+      this.showToast(`Attached ${this.pickerSelectedAssetIds.size} media files`, 'success');
+      const updated = await this.api(`/api/templates/${this.activeTemplateId}`);
+      this.activeTemplate = updated;
+      this.renderTemplateMedia(updated);
+    } catch (e) {
+      console.error('Failed to add media to template:', e);
+    }
+  }
+
+  async toggleTemplateMediaActive(assetId, isActive) {
+    if (!this.activeTemplateId) return;
+    try {
+      await this.api(`/api/templates/${this.activeTemplateId}/media/${assetId}/toggle`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: isActive ? 1 : 0 })
+      });
+      const card = document.getElementById(`tpl-media-card-${assetId}`);
+      if (card) card.classList.toggle('excluded', !isActive);
+      this.showToast(isActive ? 'Media included in rotation' : 'Media temporarily excluded', 'info');
+    } catch (e) {
+      console.error('Failed to toggle media active state:', e);
+    }
+  }
+
+  async removeMediaFromTemplate(assetId) {
+    if (!this.activeTemplateId) return;
+    try {
+      await this.api(`/api/templates/${this.activeTemplateId}/media/${assetId}`, { method: 'DELETE' });
+      this.showToast('Removed from template', 'info');
+      const updated = await this.api(`/api/templates/${this.activeTemplateId}`);
+      this.activeTemplate = updated;
+      this.renderTemplateMedia(updated);
+    } catch (e) {
+      console.error('Failed to remove media:', e);
+    }
+  }
+
+  async deleteMediaPermanently(assetId, filename) {
+    if (!confirm(`Are you sure you want to permanently delete "${filename}"?\n\nThis will remove the file from your disk and delete it from all templates and library.`)) {
+      return;
+    }
+
+    try {
+      await this.api(`/api/media/${assetId}?force=true`, { method: 'DELETE' });
+      this.showToast(`Deleted "${filename}" permanently`, 'info');
+      if (this.activeTemplateId) {
+        const updated = await this.api(`/api/templates/${this.activeTemplateId}`);
+        this.activeTemplate = updated;
+        this.renderTemplateMedia(updated);
+      }
+      if (this.currentTab === 'media') {
+        this.loadMediaLibrary(this.mediaLibraryFilter || 'all');
+      }
+    } catch (e) {
+      console.error('Failed to delete media asset:', e);
+    }
+  }
+
+  toggleSelectTemplateMedia(assetId, checked) {
+    if (checked) this.templateSelectedMediaIds.add(assetId);
+    else this.templateSelectedMediaIds.delete(assetId);
+
+    const bulkBar = document.getElementById('tpl-media-bulk-bar');
+    const countLabel = document.getElementById('tpl-media-bulk-count');
+    if (bulkBar && countLabel) {
+      const size = this.templateSelectedMediaIds.size;
+      bulkBar.style.display = size > 0 ? 'flex' : 'none';
+      countLabel.textContent = `${size} selected`;
+    }
+  }
+
+  clearTemplateMediaSelection() {
+    this.templateSelectedMediaIds.clear();
+    const bulkBar = document.getElementById('tpl-media-bulk-bar');
+    if (bulkBar) bulkBar.style.display = 'none';
+    if (this.activeTemplate) this.renderTemplateMedia(this.activeTemplate);
+  }
+
+  async bulkToggleTemplateMedia(include) {
+    if (!this.activeTemplateId || this.templateSelectedMediaIds.size === 0) return;
+    for (const aid of Array.from(this.templateSelectedMediaIds)) {
+      await this.api(`/api/templates/${this.activeTemplateId}/media/${aid}/toggle`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: include ? 1 : 0 })
+      });
+    }
+    this.showToast(`Updated ${this.templateSelectedMediaIds.size} media items`, 'info');
+    const updated = await this.api(`/api/templates/${this.activeTemplateId}`);
+    this.activeTemplate = updated;
+    this.renderTemplateMedia(updated);
+  }
+
+  async bulkRemoveTemplateMedia() {
+    if (!this.activeTemplateId || this.templateSelectedMediaIds.size === 0) return;
+    for (const aid of Array.from(this.templateSelectedMediaIds)) {
+      await this.api(`/api/templates/${this.activeTemplateId}/media/${aid}`, { method: 'DELETE' });
+    }
+    this.showToast(`Removed ${this.templateSelectedMediaIds.size} items from template`, 'info');
+    const updated = await this.api(`/api/templates/${this.activeTemplateId}`);
+    this.activeTemplate = updated;
+    this.renderTemplateMedia(updated);
+  }
+
+  async bulkDeleteTemplateMediaPermanently() {
+    if (this.templateSelectedMediaIds.size === 0) return;
+    if (!confirm(`Are you sure you want to permanently delete ${this.templateSelectedMediaIds.size} media file(s) from disk and database?`)) {
+      return;
+    }
+    const ids = Array.from(this.templateSelectedMediaIds);
+    await this.api('/api/media/bulk-delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ asset_ids: ids, force: true })
+    });
+    this.showToast(`Deleted ${ids.length} files permanently`, 'info');
+    const updated = await this.api(`/api/templates/${this.activeTemplateId}`);
+    this.activeTemplate = updated;
+    this.renderTemplateMedia(updated);
+  }
+
+  // --- Open Media Preview Modal ---
+  async openMediaPreviewModal(assetId) {
+    try {
+      const asset = await this.api(`/api/media/${assetId}`);
+      const titleEl = document.getElementById('media-preview-title');
+      const metaEl = document.getElementById('media-preview-meta');
+      const contentEl = document.getElementById('media-preview-content');
+
+      if (titleEl) titleEl.textContent = asset.filename || 'Media Preview';
+      if (metaEl) metaEl.textContent = `${this.formatBytes(asset.file_size)} · ${asset.mime_type || 'Unknown'}`;
+
+      if (contentEl) {
+        const isImg = (asset.mime_type || '').startsWith('image/');
+        const isVid = (asset.mime_type || '').startsWith('video/');
+        const isPdf = (asset.mime_type || '') === 'application/pdf';
+
+        if (isImg) {
+          contentEl.innerHTML = `<img src="/api/media/${asset.id}/file" style="max-width: 100%; max-height: 480px; border-radius: var(--radius-sm); object-fit: contain;">`;
+        } else if (isVid) {
+          contentEl.innerHTML = `<video controls src="/api/media/${asset.id}/file" style="max-width: 100%; max-height: 480px; border-radius: var(--radius-sm);"></video>`;
+        } else if (isPdf) {
+          contentEl.innerHTML = `
+            <div style="padding: 2rem; background: var(--surface-subtle); border-radius: var(--radius-sm);">
+              <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📄</div>
+              <strong>${this.escapeHtml(asset.filename)}</strong>
+              <div style="margin-top: 1rem;">
+                <a href="/api/media/${asset.id}/file" target="_blank" class="btn btn-primary btn-sm">Open Document in Browser</a>
+              </div>
+            </div>
+          `;
+        } else {
+          contentEl.innerHTML = `<div>Attachment: ${this.escapeHtml(asset.filename)}</div>`;
+        }
+      }
+
+      this.openModal('modal-media-preview');
+    } catch (e) {
+      console.error('Failed to preview media:', e);
+    }
+  }
+
+  // ==========================================================================
+  // SECTION C: TEXT VARIATIONS IN TEMPLATE EDITOR
+  // ==========================================================================
+  renderTemplateTexts(template) {
+    const list = document.getElementById('tpl-texts-list');
+    const badge = document.getElementById('tpl-texts-count-badge');
+    const emptyNotice = document.getElementById('tpl-texts-empty-notice');
+
+    const texts = template.text_variations || [];
+    if (badge) badge.textContent = `${texts.length} messages`;
+
+    if (texts.length === 0) {
+      if (list) list.innerHTML = '';
+      if (emptyNotice) emptyNotice.style.display = 'block';
+      return;
+    }
+
+    if (emptyNotice) emptyNotice.style.display = 'none';
+    if (!list) return;
+
+    list.innerHTML = texts.map((t, idx) => {
+      const isExcluded = t.is_active === 0;
+      const charCount = (t.content || '').length;
+
+      return `
+        <div class="variation-card ${isExcluded ? 'excluded' : ''}" id="tpl-var-card-${t.id}">
+          <div class="variation-card-header">
+            <div style="display: flex; align-items: center; gap: 0.5rem; flex: 1; flex-wrap: wrap;">
+              <label style="display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; cursor: pointer; user-select: none;">
+                <input type="checkbox" ${!isExcluded ? 'checked' : ''} style="cursor: pointer; accent-color: var(--primary);" onchange="app.toggleTextVariationActive(${t.id}, this.checked)">
+                <strong style="color: ${!isExcluded ? 'var(--primary)' : 'var(--text-muted)'};">${!isExcluded ? 'Active' : 'Excluded'}</strong>
+              </label>
+              <input type="text" class="form-input" value="${this.escapeHtml(t.label || `Variation ${idx + 1}`)}" placeholder="Variation Label" style="max-width: 170px; font-size: 0.78rem; padding: 0.2rem 0.5rem;" onblur="app.updateTextVariation(${t.id}, 'label', this.value)">
+              <span class="badge badge-neutral" style="font-size: 0.7rem;" id="tpl-char-cnt-${t.id}">${charCount} chars</span>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap;">
+              <button type="button" class="btn btn-secondary btn-xs" onclick="app.insertVarIntoActiveVariation(${t.id}, '{name}')">{name}</button>
+              <button type="button" class="btn btn-secondary btn-xs" onclick="app.insertVarIntoActiveVariation(${t.id}, '{first_name}')">{first_name}</button>
+              <button type="button" class="btn btn-secondary btn-xs" onclick="app.insertVarIntoActiveVariation(${t.id}, '{phone}')">{phone}</button>
+              <button type="button" class="btn btn-subtle btn-xs" onclick="app.duplicateTextVariation(${t.id})" title="Duplicate variation">Copy</button>
+              <button type="button" class="btn btn-subtle btn-xs text-danger" onclick="app.deleteTextVariation(${t.id})" title="Delete variation">Delete</button>
+            </div>
+          </div>
+
+          <textarea class="form-textarea" id="tpl-var-text-${t.id}" rows="3" placeholder="Compose message copy with variables..." style="font-size: 0.85rem;" oninput="document.getElementById('tpl-char-cnt-${t.id}').textContent = this.value.length + ' chars'" onblur="app.updateTextVariation(${t.id}, 'text_content', this.value)">${this.escapeHtml(t.content || '')}</textarea>
+        </div>
+      `;
+    }).join('');
+  }
+
+  async addTextVariationToActiveTemplate() {
+    if (!this.activeTemplateId) return;
+    try {
+      const texts = (this.activeTemplate && this.activeTemplate.text_variations) || [];
+      const newLabel = `Variation ${texts.length + 1}`;
+      const newText = 'Hello {first_name}, ';
+
+      await this.api(`/api/templates/${this.activeTemplateId}/texts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: newText, text_content: newText, label: newLabel })
+      });
+
+      this.showToast('Added message variation', 'info');
+      const updated = await this.api(`/api/templates/${this.activeTemplateId}`);
+      this.activeTemplate = updated;
+      this.renderTemplateTexts(updated);
+    } catch (e) {
+      console.error('Failed to add text variation:', e);
+    }
+  }
+
+  async updateTextVariation(variantId, field, value) {
+    if (!this.activeTemplateId) return;
+    try {
+      const payload = {};
+      if (field === 'text_content') {
+        payload.content = value;
+        payload.text_content = value;
+      } else {
+        payload[field] = value;
+      }
+      await this.api(`/api/templates/${this.activeTemplateId}/texts/${variantId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      // Update local object
+      if (this.activeTemplate && this.activeTemplate.text_variations) {
+        const item = this.activeTemplate.text_variations.find(v => v.id === variantId);
+        if (item) {
+          if (field === 'text_content') item.content = value;
+          if (field === 'label') item.label = value;
+        }
+      }
+    } catch (e) {
+      console.error('Failed to update text variation:', e);
+    }
+  }
+
+  async toggleTextVariationActive(variantId, isActive) {
+    if (!this.activeTemplateId) return;
+    try {
+      await this.api(`/api/templates/${this.activeTemplateId}/texts/${variantId}/toggle`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: isActive ? 1 : 0 })
+      });
+      const card = document.getElementById(`tpl-var-card-${variantId}`);
+      if (card) card.classList.toggle('excluded', !isActive);
+      this.showToast(isActive ? 'Variation included' : 'Variation temporarily excluded', 'info');
+    } catch (e) {
+      console.error('Failed to toggle variation:', e);
+    }
+  }
+
+  async duplicateTextVariation(variantId) {
+    if (!this.activeTemplateId || !this.activeTemplate) return;
+    const texts = this.activeTemplate.text_variations || [];
+    const source = texts.find(t => t.id === variantId);
+    if (!source) return;
+
+    try {
+      await this.api(`/api/templates/${this.activeTemplateId}/texts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text_content: source.content,
+          label: `${source.label || 'Variation'} (Copy)`
+        })
+      });
+      this.showToast('Variation duplicated', 'info');
+      const updated = await this.api(`/api/templates/${this.activeTemplateId}`);
+      this.activeTemplate = updated;
+      this.renderTemplateTexts(updated);
+    } catch (e) {
+      console.error('Failed to duplicate variation:', e);
+    }
+  }
+
+  async deleteTextVariation(variantId) {
+    if (!this.activeTemplateId) return;
+    try {
+      await this.api(`/api/templates/${this.activeTemplateId}/texts/${variantId}`, { method: 'DELETE' });
+      this.showToast('Variation removed', 'info');
+      const updated = await this.api(`/api/templates/${this.activeTemplateId}`);
+      this.activeTemplate = updated;
+      this.renderTemplateTexts(updated);
+    } catch (e) {
+      console.error('Failed to delete variation:', e);
+    }
+  }
+
+  insertVarIntoActiveVariation(variantId, tag) {
+    const textarea = document.getElementById(`tpl-var-text-${variantId}`);
+    if (!textarea) return;
+    const start = textarea.selectionStart || 0;
+    const end = textarea.selectionEnd || 0;
+    const text = textarea.value;
+    textarea.value = text.substring(0, start) + tag + text.substring(end);
+    textarea.focus();
+    textarea.selectionStart = textarea.selectionEnd = start + tag.length;
+    this.updateTextVariation(variantId, 'text_content', textarea.value);
+  }
+
+  openPasteMultipleTextsModal() {
+    const textarea = document.getElementById('paste-multiple-raw-text');
+    if (textarea) textarea.value = '';
+    this.openModal('modal-paste-multiple-texts');
+  }
+
+  async submitPasteMultipleTexts() {
+    if (!this.activeTemplateId) return;
+    const textarea = document.getElementById('paste-multiple-raw-text');
+    const delimSelect = document.getElementById('paste-multiple-delimiter');
+    const raw = textarea ? textarea.value.trim() : '';
+
+    if (!raw) {
+      this.showToast('Please enter text variations', 'warning');
+      return;
+    }
+
+    let sep = '\n';
+    if (delimSelect && delimSelect.value === 'empty_line') sep = '\n\n';
+    if (delimSelect && delimSelect.value === 'separator') sep = '---';
+
+    try {
+      const res = await this.api(`/api/templates/${this.activeTemplateId}/texts/paste-multiple`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ raw_text: raw, separator: sep })
+      });
+
+      this.closeModal('modal-paste-multiple-texts');
+      this.showToast(`Added ${res.added_count || 'several'} variations`, 'success');
+      const updated = await this.api(`/api/templates/${this.activeTemplateId}`);
+      this.activeTemplate = updated;
+      this.renderTemplateTexts(updated);
+    } catch (e) {
+      console.error('Failed to paste multiple texts:', e);
+    }
+  }
+
+  openImportTextsModal() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.txt,.csv';
+    input.onchange = async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file || !this.activeTemplateId) return;
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+        const text = evt.target.result;
+        try {
+          const res = await this.api(`/api/templates/${this.activeTemplateId}/texts/paste-multiple`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ raw_text: text, separator: '\n' })
+          });
+          this.showToast(`Imported ${res.added_count || 0} variations from file`, 'success');
+          const updated = await this.api(`/api/templates/${this.activeTemplateId}`);
+          this.activeTemplate = updated;
+          this.renderTemplateTexts(updated);
+        } catch (err) {
+          this.showToast(`Import failed: ${err.message}`, 'error');
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  }
+
+  // ==========================================================================
+  // TRANSPARENT ASSIGNMENT PREVIEW MODAL
+  // ==========================================================================
+  async openAssignmentsPreviewModal() {
+    if (!this.activeTemplateId) return;
+    try {
+      const data = await this.api(`/api/templates/${this.activeTemplateId}/preview-assignments`, { method: 'POST' });
+      this.activeAssignments = data.all_assignments || data.sample_assignments || [];
+
+      const modeLabel = data.mode === 'mix_variations' ? 'Mix Variations (1 media + 1 text assigned per recipient)' : 'Same for Everyone';
+      const modeEl = document.getElementById('assign-prev-mode');
+      const countEl = document.getElementById('assign-prev-count');
+      if (modeEl) modeEl.textContent = modeLabel;
+      if (countEl) countEl.textContent = `${data.total_recipients || this.activeAssignments.length} eligible contacts`;
+
+      this.renderAssignmentsPreviewTable(this.activeAssignments);
+      this.openModal('modal-preview-assignments');
+    } catch (e) {
+      console.error('Failed to generate preview assignments:', e);
+      this.showToast('Could not compute assignments preview', 'error');
+    }
+  }
+
+  filterAssignmentsPreview(query = '') {
+    const q = (query || (document.getElementById('assign-prev-search') ? document.getElementById('assign-prev-search').value : '')).toLowerCase().trim();
+    let filtered = this.activeAssignments || [];
+    if (q) {
+      filtered = filtered.filter(a => (a.name || '').toLowerCase().includes(q) || (a.phone || '').includes(q) || (a.assigned_message || '').toLowerCase().includes(q));
+    }
+    this.renderAssignmentsPreviewTable(filtered);
+  }
+
+  renderAssignmentsPreviewTable(assignments) {
+    const tbody = document.getElementById('assign-prev-tbody');
+    if (!tbody) return;
+
+    if (!assignments || assignments.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="3" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">No assignments found for eligible contacts.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = assignments.map(a => {
+      let mediaMarkup = '<span style="color: var(--text-muted);">None (Text-only)</span>';
+      if (a.media_asset_id && a.media_filename) {
+        mediaMarkup = `
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <div style="width: 32px; height: 32px; border-radius: var(--radius-xs); overflow: hidden; background: var(--surface-subtle); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+              <img src="/api/media/${a.media_asset_id}/file" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
+              <span style="display: none; font-size: 0.8rem;">📎</span>
+            </div>
+            <span style="font-size: 0.78rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${this.escapeHtml(a.media_filename)}</span>
+          </div>
+        `;
+      }
+
+      return `
+        <tr>
+          <td>
+            <strong>${this.escapeHtml(a.name || 'Customer')}</strong>
+            <div style="font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-muted);">+${this.escapeHtml(a.phone || '')}</div>
+          </td>
+          <td>${mediaMarkup}</td>
+          <td style="font-size: 0.8125rem; line-height: 1.4; color: var(--text-secondary);">${this.escapeHtml(a.assigned_message || '')}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  // ==========================================================================
+  // REVIEW & SEND BROADCAST MODAL
+  // ==========================================================================
+  async openReviewSendModal(templateId = null) {
+    const tid = templateId || this.activeTemplateId;
+    if (!tid) return;
+    this.activeTemplateId = tid;
+
+    try {
+      const t = await this.api(`/api/templates/${tid}`);
+      this.activeTemplate = t;
+
+      // Summary Fields
+      const nameEl = document.getElementById('rev-tpl-name');
+      const modeEl = document.getElementById('rev-tpl-mode');
+      const cntEligible = document.getElementById('rev-cnt-eligible');
+      const cntExcluded = document.getElementById('rev-cnt-excluded');
+      const cntMedia = document.getElementById('rev-cnt-media');
+      const cntTexts = document.getElementById('rev-cnt-texts');
+      const campNameInput = document.getElementById('rev-campaign-name');
+      const pacingMinInput = document.getElementById('rev-pacing-min');
+      const pacingMaxInput = document.getElementById('rev-pacing-max');
+      const warningBox = document.getElementById('rev-warning-box');
+      const launchBtn = document.getElementById('btn-confirm-launch');
+
+      const activeTexts = (t.text_variations || []).filter(x => x.is_active);
+      const activeMedia = (t.media_assets || []).filter(x => x.is_active);
+
+      // Summary counts from template
+      const summary = t.contacts_summary || { total_selected: 0, eligible: 0, excluded: 0 };
+      const eligibleCount = summary.eligible;
+      const excludedCount = summary.excluded;
+
+      if (nameEl) nameEl.textContent = t.name;
+      if (modeEl) modeEl.textContent = t.content_selection_mode === 'mix_variations' ? 'Mix Variations' : 'Same for Everyone';
+      if (cntEligible) cntEligible.textContent = eligibleCount;
+      if (cntExcluded) cntExcluded.textContent = excludedCount;
+      if (cntMedia) cntMedia.textContent = activeMedia.length;
+      if (cntTexts) cntTexts.textContent = activeTexts.length;
+
+      const dateStr = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      if (campNameInput) campNameInput.value = `${t.name} — ${dateStr}`;
+      if (pacingMinInput) pacingMinInput.value = t.pacing_delay_min || 8;
+      if (pacingMaxInput) pacingMaxInput.value = t.pacing_delay_max || 16;
+
+      // Connection Status Check
+      const isConnected = this.currentSessionState === 'connected' || this.isWhatsAppConnected;
+      const connDot = document.getElementById('rev-conn-dot');
+      const connText = document.getElementById('rev-conn-text');
+      const btnReconnect = document.getElementById('btn-rev-reconnect');
+      if (connDot && connText) {
+        if (isConnected) {
+          connDot.className = 'status-indicator online';
+          connText.textContent = 'Connection: Ready to dispatch';
+          if (btnReconnect) btnReconnect.style.display = 'none';
+        } else {
+          connDot.className = 'status-indicator offline';
+          connText.textContent = 'Connection: Action required (Browser not connected)';
+          if (btnReconnect) btnReconnect.style.display = 'inline-block';
+        }
+      }
+
+      // Smart Warnings & Validations
+      let warning = '';
+      let canSend = true;
+
+      if (eligibleCount === 0) {
+        warning = '❌ Cannot send broadcast: No eligible contacts found in selected audience.';
+        canSend = false;
+      } else if (activeTexts.length === 0 && !t.content) {
+        warning = '❌ Cannot send broadcast: Please write at least one active message variation.';
+        canSend = false;
+      } else if (eligibleCount > 20 && activeTexts.length === 1) {
+        warning = `⚠️ Spam Risk Warning: You are sending to ${eligibleCount} contacts with only 1 message variation. Adding 2–3 phrasing variations is strongly recommended to protect your WhatsApp account.`;
+      }
+
+      if (warningBox) {
+        if (warning) {
+          warningBox.style.display = 'block';
+          warningBox.textContent = warning;
+        } else {
+          warningBox.style.display = 'none';
+        }
+      }
+
+      if (launchBtn) launchBtn.disabled = !canSend;
+
+      this.openModal('modal-review-send');
+    } catch (e) {
+      console.error('Failed to prepare review send modal:', e);
+    }
+  }
+
+  async submitLaunchTemplateCampaign() {
+    if (!this.activeTemplateId) return;
+    const nameInput = document.getElementById('rev-campaign-name');
+    const pacingMinInput = document.getElementById('rev-pacing-min');
+    const pacingMaxInput = document.getElementById('rev-pacing-max');
+
+    const campaignName = nameInput ? nameInput.value.trim() : '';
+    const minDelay = pacingMinInput ? parseFloat(pacingMinInput.value) : 8;
+    const maxDelay = pacingMaxInput ? parseFloat(pacingMaxInput.value) : 16;
+
+    try {
+      const res = await this.api(`/api/templates/${this.activeTemplateId}/launch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          campaign_name: campaignName,
+          pacing_delay_min: minDelay,
+          pacing_delay_max: maxDelay
+        })
+      });
+
+      this.closeModal('modal-review-send');
+      this.showToast(`Broadcast '${res.campaign_name}' launched!`, 'success');
+      this.navigate('campaigns');
+    } catch (e) {
+      console.error('Failed to launch campaign:', e);
+    }
+  }
+
+  // ==========================================================================
+  // SECTION: MEDIA LIBRARY (DEDICATED TAB)
+  // ==========================================================================
+  async loadMediaLibrary(filter = 'all') {
+    this.mediaLibraryFilter = filter;
+    ['all', 'image', 'video', 'doc'].forEach(f => {
+      const btn = document.getElementById(`medialib-flt-${f}`);
+      if (btn) btn.classList.toggle('active', f === filter);
+    });
+
+    try {
+      const assets = await this.api('/api/media', { silent: true }).catch(() => []);
+      const countLabel = document.getElementById('medialib-count-label');
+      const grid = document.getElementById('medialib-grid');
+      const emptyState = document.getElementById('medialib-empty-state');
+      const bulkBar = document.getElementById('medialib-bulk-bar');
+
+      this.selectedMediaLibraryIds.clear();
+      if (bulkBar) bulkBar.style.display = 'none';
+
+      let filtered = assets || [];
+      if (filter === 'image') filtered = filtered.filter(a => (a.mime_type || '').startsWith('image/'));
+      if (filter === 'video') filtered = filtered.filter(a => (a.mime_type || '').startsWith('video/'));
+      if (filter === 'document') filtered = filtered.filter(a => (a.mime_type || '') === 'application/pdf');
+
+      if (countLabel) countLabel.textContent = `${filtered.length} durable assets in storage`;
+
+      if (filtered.length === 0) {
+        if (grid) grid.innerHTML = '';
+        if (emptyState) emptyState.style.display = 'flex';
+        return;
+      }
+
+      if (emptyState) emptyState.style.display = 'none';
+      if (!grid) return;
+
+      grid.innerHTML = filtered.map(a => {
+        const isImg = (a.mime_type || '').startsWith('image/');
+        const isVid = (a.mime_type || '').startsWith('video/');
+        const isPdf = (a.mime_type || '') === 'application/pdf';
+
+        let thumbMarkup = '';
+        if (isImg) {
+          thumbMarkup = `<img src="/api/media/${a.id}/file" alt="${this.escapeHtml(a.filename)}" style="cursor: pointer;" onclick="app.openMediaPreviewModal(${a.id})">`;
+        } else {
+          const icon = isPdf ? '📄 PDF' : (isVid ? '🎬 Video' : '📎 File');
+          thumbMarkup = `<div style="font-weight: 700; color: var(--text-muted); cursor: pointer;" onclick="app.openMediaPreviewModal(${a.id})">${icon}</div>`;
+        }
+
+        return `
+          <div class="media-set-card-item" id="medialib-card-${a.id}">
+            <div class="media-set-card-header">
+              <input type="checkbox" style="cursor: pointer; accent-color: var(--primary);" onchange="app.toggleSelectMediaLibrary(${a.id}, this.checked)">
+              <span style="font-size: 0.68rem; color: var(--text-muted);">${(a.mime_type || '').split('/')[1] || 'FILE'}</span>
+            </div>
+
+            <div class="media-set-thumb-box">
+              ${thumbMarkup}
+            </div>
+
+            <div class="media-set-card-title" title="${this.escapeHtml(a.filename)}">
+              ${this.escapeHtml(a.filename)}
+            </div>
+
+            <div class="media-set-card-meta">
+              <span>${this.formatBytes(a.file_size)}</span>
+              <span>${(a.created_at || '').substring(0, 10)}</span>
+            </div>
+
+            <div class="media-set-card-actions">
+              <button type="button" class="btn btn-subtle btn-xs" onclick="app.openMediaPreviewModal(${a.id})">Preview</button>
+              <button type="button" class="btn btn-subtle btn-xs text-danger" onclick="app.deleteMediaPermanently(${a.id}, '${this.escapeHtml(a.filename)}')">Delete</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    } catch (e) {
+      console.error('Failed to load media library:', e);
+    }
+  }
+
+  filterMediaLibrary(filter) {
+    this.loadMediaLibrary(filter);
+  }
+
+  async onMediaLibraryFilesUploaded(e) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    let uploaded = 0;
+    for (let i = 0; i < files.length; i++) {
+      const formData = new FormData();
+      formData.append('file', files[i]);
+      formData.append('title', files[i].name || 'Media Asset');
+      try {
+        const res = await fetch('/api/media/upload', { method: 'POST', body: formData });
+        if (res.ok) uploaded++;
+      } catch (err) {}
+    }
+
+    this.showToast(`Uploaded ${uploaded} file(s) to library`, 'success');
+    e.target.value = '';
+    this.loadMediaLibrary(this.mediaLibraryFilter || 'all');
+  }
+
+  toggleSelectMediaLibrary(assetId, checked) {
+    if (checked) this.selectedMediaLibraryIds.add(assetId);
+    else this.selectedMediaLibraryIds.delete(assetId);
+
+    const bulkBar = document.getElementById('medialib-bulk-bar');
+    const countLabel = document.getElementById('medialib-bulk-count');
+    if (bulkBar && countLabel) {
+      const size = this.selectedMediaLibraryIds.size;
+      bulkBar.style.display = size > 0 ? 'flex' : 'none';
+      countLabel.textContent = `${size} selected`;
+    }
+  }
+
+  clearMediaLibrarySelection() {
+    this.selectedMediaLibraryIds.clear();
+    const bulkBar = document.getElementById('medialib-bulk-bar');
+    if (bulkBar) bulkBar.style.display = 'none';
+    this.loadMediaLibrary(this.mediaLibraryFilter || 'all');
+  }
+
+  async executeBulkDeleteMediaLibrary() {
+    if (this.selectedMediaLibraryIds.size === 0) return;
+    if (!confirm(`Are you sure you want to permanently delete ${this.selectedMediaLibraryIds.size} file(s) from disk and database?`)) {
+      return;
+    }
+
+    const ids = Array.from(this.selectedMediaLibraryIds);
+    try {
+      await this.api('/api/media/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ asset_ids: ids, force: true })
+      });
+      this.showToast(`Deleted ${ids.length} files permanently`, 'info');
+      this.loadMediaLibrary(this.mediaLibraryFilter || 'all');
+    } catch (e) {
+      console.error('Failed to bulk delete media:', e);
+    }
+  }
+
+  // ==========================================================================
+  // SECTION: UNIFIED CAMPAIGNS PROGRESS & HISTORY (CAMPAIGNS TAB)
+  // ==========================================================================
+  async loadCampaignsData() {
+    try {
+      // 1. Check for active running job
+      const activeRes = await this.api('/api/jobs/active', { silent: true }).catch(() => null);
+      const activeJob = (activeRes && activeRes.active_job) ? activeRes.active_job : activeRes;
+      if (activeJob && activeJob.status && activeJob.status !== 'COMPLETED' && activeJob.status !== 'CANCELLED' && activeJob.status !== 'FAILED') {
+        this.updateCampaignProgressUI(activeJob);
+      } else {
+        const progCard = document.getElementById('campaign-progress-card');
+        if (progCard) progCard.style.display = 'none';
+      }
+
+      // 2. Load past campaigns table
+      const campaigns = await this.api('/api/campaigns', { silent: true }).catch(() => []);
+      this.renderCampaignHistory(campaigns || []);
+    } catch (e) {
+      console.error('Failed to load campaigns data:', e);
+    }
+  }
+
+  updateCampaignProgressUI(job) {
+    const card = document.getElementById('campaign-progress-card');
+    if (!card || !job) return;
+
+    card.style.display = 'block';
+
+    const nameEl = document.getElementById('prog-campaign-name');
+    const badgeEl = document.getElementById('prog-badge-status');
+    const timeEl = document.getElementById('prog-started-time');
+    const labelEl = document.getElementById('prog-progress-text');
+    const barEl = document.getElementById('prog-progress-bar');
+    const sentEl = document.getElementById('prog-cnt-sent');
+    const pendingEl = document.getElementById('prog-cnt-pending');
+    const failedEl = document.getElementById('prog-cnt-failed');
+    const uncertainEl = document.getElementById('prog-cnt-uncertain');
+    const activityEl = document.getElementById('prog-current-activity');
+    const pauseBtn = document.getElementById('btn-prog-pause');
+
+    if (nameEl) nameEl.textContent = job.campaign_name || 'Active Campaign';
+    if (badgeEl) badgeEl.textContent = job.status || 'SENDING';
+    if (timeEl) timeEl.textContent = `Started: ${new Date(job.created_at || Date.now()).toLocaleTimeString()}`;
+
+    const total = job.total_count || job.total || 0;
+    const sent = job.sent_count || job.sent || 0;
+    const failed = job.failed_count || job.failed || 0;
+    const uncertain = job.uncertain_count || job.uncertain || 0;
+    const pending = (job.pending_count !== undefined) ? job.pending_count : Math.max(0, total - (sent + failed + uncertain));
+    const processed = sent + failed + uncertain;
+    const pct = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
+
+    if (sentEl) sentEl.textContent = sent;
+    if (pendingEl) pendingEl.textContent = pending;
+    if (failedEl) failedEl.textContent = failed;
+    if (uncertainEl) uncertainEl.textContent = uncertain;
+
+    if (labelEl) labelEl.textContent = `${processed} / ${total} processed (${pct}%)`;
+    if (barEl) barEl.style.transform = `scaleX(${pct / 100})`;
+
+    if (activityEl) {
+      if (job.status === 'PAUSED') activityEl.textContent = 'Campaign paused. Click Resume to continue dispatching.';
+      else if (job.current_recipient) activityEl.textContent = `Currently processing: ${job.current_recipient}`;
+      else activityEl.textContent = `Active dispatch in progress (${processed}/${total})`;
+    }
+
+    if (pauseBtn) {
+      pauseBtn.textContent = job.status === 'PAUSED' ? 'Resume' : 'Pause';
+    }
+
+    // Populate live dispatch feed rows
+    const tbody = document.getElementById('prog-dispatch-tbody');
+    if (tbody && job.queue_items) {
+      tbody.innerHTML = job.queue_items.slice(-15).reverse().map(item => {
+        let statusBadge = '<span class="badge badge-neutral">Pending</span>';
+        if (item.status === 'SENT' || item.status === 'COMPLETED') statusBadge = '<span class="badge badge-success">Sent</span>';
+        if (item.status === 'FAILED') statusBadge = '<span class="badge badge-danger">Failed</span>';
+        if (item.status === 'UNCERTAIN') statusBadge = '<span class="badge badge-warning">Uncertain</span>';
+
+        return `
+          <tr>
+            <td><strong>${this.escapeHtml(item.contact_name || 'Customer')}</strong></td>
+            <td style="font-family: var(--font-mono); font-size: 0.72rem;">+${this.escapeHtml(item.phone || '')}</td>
+            <td style="font-size: 0.75rem;">${item.media_filename ? '📎 ' + this.escapeHtml(item.media_filename) : 'Text only'}</td>
+            <td style="font-size: 0.75rem; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${this.escapeHtml(item.message || '')}</td>
+            <td>${statusBadge}</td>
+            <td style="font-size: 0.72rem; color: var(--text-muted);">${new Date(item.created_at || Date.now()).toLocaleTimeString()}</td>
+            <td style="font-size: 0.72rem; color: var(--danger);">${this.escapeHtml(item.error_message || '—')}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+  }
+
+  renderCampaignHistory(campaigns) {
+    const tbody = document.getElementById('campaign-history-tbody');
+    const emptyNotice = document.getElementById('campaign-history-empty');
+    if (!tbody) return;
+
+    if (!campaigns || campaigns.length === 0) {
+      tbody.innerHTML = '';
+      if (emptyNotice) emptyNotice.style.display = 'block';
+      return;
+    }
+
+    if (emptyNotice) emptyNotice.style.display = 'none';
+
+    tbody.innerHTML = campaigns.map(c => {
+      let statusBadge = `<span class="badge badge-neutral">${this.escapeHtml(c.status || 'draft')}</span>`;
+      if (c.status === 'COMPLETED') statusBadge = '<span class="badge badge-success">Completed</span>';
+      if (c.status === 'RUNNING' || c.status === 'SENDING') statusBadge = '<span class="badge badge-primary">Running</span>';
+      if (c.status === 'PAUSED') statusBadge = '<span class="badge badge-warning">Paused</span>';
+      if (c.status === 'FAILED') statusBadge = '<span class="badge badge-danger">Failed</span>';
+
+      const sentCount = c.sent_count || 0;
+      const totalCount = c.total_count || 0;
+
+      return `
+        <tr>
+          <td><strong>${this.escapeHtml(c.name || 'Unnamed Broadcast')}</strong></td>
+          <td>${statusBadge}</td>
+          <td><strong>${sentCount}</strong> / ${totalCount} delivered</td>
+          <td style="font-size: 0.75rem; color: var(--text-muted);">${(c.created_at || '').substring(0, 16).replace('T', ' ')}</td>
+          <td style="text-align: right;">
+            <button type="button" class="btn btn-subtle btn-xs text-danger" onclick="app.deleteCampaignRecord(${c.id}, '${this.escapeHtml(c.name)}')">
+              Delete
+            </button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  async deleteCampaignRecord(campaignId, name) {
+    if (!confirm(`Are you sure you want to delete campaign '${name}'?`)) return;
+    try {
+      await this.api(`/api/campaigns/${campaignId}`, { method: 'DELETE' });
+      this.showToast(`Deleted campaign '${name}'`, 'info');
+      this.loadCampaignsData();
+    } catch (e) {
+      console.error('Failed to delete campaign:', e);
+    }
+  }
+
 }
+
 
 // Instantiate singleton dashboard application
 const app = new WhatsAppDashboardApp();

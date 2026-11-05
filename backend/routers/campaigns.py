@@ -480,3 +480,28 @@ def launch_campaign(payload: CampaignLaunchRequest):
     except Exception as e:
         logger.error(f"Failed to launch campaign: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to launch campaign: {str(e)}")
+
+
+@router.get("")
+def list_campaigns(limit: int = 50, offset: int = 0):
+    """Lists historical and active campaigns."""
+    return db.get_campaigns(limit=limit, offset=offset)
+
+
+@router.get("/{campaign_id}")
+def get_campaign_detail(campaign_id: int):
+    """Retrieves full details of a single campaign."""
+    camp = db.get_campaign(campaign_id)
+    if not camp:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    return camp
+
+
+@router.delete("/{campaign_id}")
+def delete_campaign(campaign_id: int):
+    """Deletes a campaign record."""
+    success = db.delete_campaign(campaign_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    return {"success": True, "deleted_id": campaign_id}
+

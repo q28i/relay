@@ -151,12 +151,21 @@ class MessageVariantUpdate(BaseModel):
 
 class TemplateCreate(BaseModel):
     name: str = Field(..., description="Unique template name")
-    content: str = Field(..., description="Base message body with {name} or variable tags")
+    content: Optional[str] = Field(default="Hello {first_name}, ", description="Base message body with {name} or variable tags")
+    description: Optional[str] = Field(default="", description="Template description")
+    content_selection_mode: Optional[str] = Field(default="mix_variations", description="same_for_everyone or mix_variations")
+    target_group: Optional[str] = Field(default="All", description="Target contact group")
+
 
 
 class TemplateUpdate(BaseModel):
-    name: str = Field(..., description="Updated template name")
-    content: str = Field(..., description="Updated template body")
+    name: Optional[str] = Field(default=None, description="Updated template name")
+    content: Optional[str] = Field(default=None, description="Updated template body")
+    description: Optional[str] = Field(default=None, description="Template description")
+    content_selection_mode: Optional[str] = Field(default=None, description="same_for_everyone or mix_variations")
+    target_group: Optional[str] = Field(default=None, description="Target contact group")
+    pacing_delay_min: Optional[int] = Field(default=None, description="Min seconds between messages")
+    pacing_delay_max: Optional[int] = Field(default=None, description="Max seconds between messages")
 
 
 class SpintaxTestRequest(BaseModel):

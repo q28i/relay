@@ -198,7 +198,7 @@ def list_contacts(
     group: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     consent: Optional[str] = Query(None),
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(100, ge=1, le=10000),
     offset: int = Query(0, ge=0)
 ):
     """Lists contacts with optional group filtering, consent filtering, search query, and pagination."""

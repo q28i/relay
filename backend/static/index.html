@@ -37,37 +37,31 @@
 
     <ul class="sidebar-nav">
       <li>
-        <button class="nav-link active" data-tab="dashboard">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect></svg>
-          Dashboard
+        <button class="nav-link active" data-tab="templates" onclick="app.navigate('templates')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+          Templates
         </button>
       </li>
       <li>
-        <button class="nav-link" data-tab="contacts">
+        <button class="nav-link" data-tab="contacts" onclick="app.navigate('contacts')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
           Contacts
         </button>
       </li>
       <li>
-        <button class="nav-link" data-tab="messages">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-          Messages
+        <button class="nav-link" data-tab="media" onclick="app.navigate('media')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+          Media Library
         </button>
       </li>
       <li>
-        <button class="nav-link" data-tab="campaigns">
+        <button class="nav-link" data-tab="campaigns" onclick="app.navigate('campaigns')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
           Campaigns
         </button>
       </li>
       <li>
-        <button class="nav-link" data-tab="activity">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-          Activity
-        </button>
-      </li>
-      <li>
-        <button class="nav-link" data-tab="settings">
+        <button class="nav-link" data-tab="settings" onclick="app.navigate('settings')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
           Settings
         </button>
@@ -85,7 +79,7 @@
     <!-- Topbar Header -->
     <header class="app-topbar">
       <div>
-        <h1 class="page-title" id="page-heading">Dashboard</h1>
+        <h1 class="page-title" id="page-heading">Templates</h1>
       </div>
       <div class="topbar-actions">
         <div class="status-pill" id="topbar-session-pill" title="Messaging Session Status">
@@ -95,14 +89,244 @@
         <button class="btn btn-secondary btn-sm" onclick="app.navigate('settings')">
           Connection
         </button>
-        <button class="btn btn-primary btn-sm" onclick="app.navigate('campaigns')">
-          New Campaign
+        <button class="btn btn-primary btn-sm" onclick="app.openNewTemplateModal()">
+          + Create Template
         </button>
       </div>
     </header>
 
-    <!-- SECTION 1: DASHBOARD -->
-    <section class="page-container active" id="tab-dashboard">
+    <!-- SECTION 1: TEMPLATES (THE CORE REUSABLE WORKSPACE) -->
+    <section class="page-container active" id="tab-templates">
+      <!-- 1. TEMPLATE LIST VIEW -->
+      <div id="template-list-view">
+        <!-- Top Controls: Search, Filter & Actions -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
+          <div style="display: flex; align-items: center; gap: 0.5rem; flex: 1; max-width: 480px;">
+            <input type="text" id="tpl-search-input" class="form-input" placeholder="Search templates..." oninput="app.filterTemplatesList(this.value)">
+            <select class="form-select" id="tpl-group-filter" style="max-width: 170px;" onchange="app.filterTemplatesList()">
+              <option value="All">All Audiences</option>
+            </select>
+          </div>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="app.openImportTemplateModal()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              Import Template
+            </button>
+            <button type="button" class="btn btn-primary btn-sm" onclick="app.openNewTemplateModal()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              + Create Template
+            </button>
+          </div>
+        </div>
+
+        <!-- Clean Empty State (Shown when 0 templates) -->
+        <div class="clean-empty-state" id="templates-empty-state" style="display: none;">
+          <div class="clean-empty-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+          </div>
+          <div class="clean-empty-title">No templates yet.</div>
+          <div class="clean-empty-subtitle">Create your first template to add contacts, images, and messages.</div>
+          <button type="button" class="btn btn-primary" onclick="app.openNewTemplateModal()">
+            + Create Template
+          </button>
+        </div>
+
+        <!-- Templates Grid (Cards) -->
+        <div class="template-grid" id="templates-grid">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+
+      <!-- 2. TEMPLATE EDITOR VIEW -->
+      <div id="template-editor-view" style="display: none;">
+        <!-- Sticky Editor Top Bar -->
+        <div class="template-editor-topbar">
+          <div class="template-editor-left">
+            <button type="button" class="btn btn-subtle btn-sm" onclick="app.closeTemplateEditor()" title="Return to template list">
+              ← All Templates
+            </button>
+            <div style="flex: 1; min-width: 180px;">
+              <input type="text" id="tpl-edit-name-input" class="form-input" placeholder="Template Name (e.g. Winter Sale)" style="font-weight: 700; font-size: 1rem; padding: 0.35rem 0.65rem;" onchange="app.saveActiveTemplateMeta()">
+            </div>
+          </div>
+
+          <div class="template-editor-right">
+            <!-- Mode Toggle Switcher -->
+            <div class="mode-pill-group" role="group" aria-label="Content Selection Mode">
+              <button type="button" class="mode-pill-btn active" id="btn-mode-mix" onclick="app.setActiveTemplateMode('mix_variations')" title="1 media + 1 text assigned per recipient using reproducible RNG">
+                🎲 Mix Variations (Randomiser)
+              </button>
+              <button type="button" class="mode-pill-btn" id="btn-mode-same" onclick="app.setActiveTemplateMode('same_for_everyone')" title="Same 1 media + 1 text sent to all selected contacts">
+                📋 Same for Everyone
+              </button>
+            </div>
+
+            <!-- Connection Status Indicator -->
+            <div class="status-pill" id="tpl-editor-conn-pill" style="cursor: pointer;" onclick="app.navigate('settings')" title="Click to view WhatsApp connection settings">
+              <span class="status-indicator offline" id="tpl-editor-conn-dot"></span>
+              <span id="tpl-editor-conn-text" style="font-size: 0.78rem; font-weight: 600;">Connection: Checking</span>
+            </div>
+
+            <button type="button" class="btn btn-secondary btn-sm" onclick="app.openAssignmentsPreviewModal()" title="Inspect exact 1-media + 1-text assignment per recipient before sending">
+              Preview Assignments
+            </button>
+            <button type="button" class="btn btn-primary btn-sm" onclick="app.openReviewSendModal()" style="font-weight: 700;">
+              Review & Send
+            </button>
+            <button type="button" class="btn btn-subtle btn-sm" onclick="app.duplicateActiveTemplate()" title="Duplicate this template">
+              Duplicate
+            </button>
+            <button type="button" class="btn btn-subtle btn-sm text-danger" onclick="app.deleteActiveTemplate()" title="Delete this template">
+              Delete
+            </button>
+          </div>
+        </div>
+
+        <!-- SECTION A: CONTACTS -->
+        <div class="template-section-card" id="tpl-section-contacts">
+          <div class="template-section-header">
+            <div>
+              <div class="template-section-title">
+                <span>Section A — Contacts & Target Audience</span>
+              </div>
+              <div class="template-section-sub">
+                Select contacts to receive this broadcast. Checkboxes select contacts for this run; they do NOT delete contacts from your address book.
+              </div>
+            </div>
+            <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+              <select class="form-select" id="tpl-contact-group-select" style="max-width: 170px; font-size: 0.8125rem;" onchange="app.onTemplateAudienceChange(this.value)">
+                <option value="All">All Contacts</option>
+              </select>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="app.openModal('modal-import')">Import CSV/Excel</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="app.openModal('modal-paste')">Paste Numbers</button>
+            </div>
+          </div>
+
+          <!-- Recipient Counters Summary Bar -->
+          <div style="padding: 0.65rem 1.25rem; background: var(--bg-surface); border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+            <div style="display: flex; gap: 1rem; align-items: center; font-size: 0.8125rem;">
+              <span>Total in Audience: <strong id="tpl-cnt-total">0</strong></span>
+              <span style="color: #10b981;">Eligible: <strong id="tpl-cnt-eligible">0</strong></span>
+              <span style="color: var(--text-muted);">Excluded (Opt-out/Suppressed): <strong id="tpl-cnt-excluded">0</strong></span>
+              <span>Included for this run: <strong id="tpl-cnt-included" style="color: var(--primary);">0</strong></span>
+            </div>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+              <input type="text" id="tpl-contacts-search" class="form-input" placeholder="Search contacts in this list..." style="font-size: 0.78rem; padding: 0.25rem 0.5rem; max-width: 200px;" oninput="app.filterTemplateContacts(this.value)">
+              <button type="button" class="btn btn-subtle btn-xs" onclick="app.selectAllTemplateContacts(true)">Select All</button>
+              <button type="button" class="btn btn-subtle btn-xs" onclick="app.selectAllTemplateContacts(false)">Deselect All</button>
+            </div>
+          </div>
+
+          <!-- Contacts Table with Checkboxes -->
+          <div style="max-height: 280px; overflow-y: auto;">
+            <table class="data-table" style="width: 100%; margin: 0; font-size: 0.8125rem;">
+              <thead>
+                <tr>
+                  <th style="width: 40px; text-align: center;">
+                    <input type="checkbox" id="chk-master-tpl-contacts" onchange="app.toggleMasterTemplateContacts(this.checked)" style="cursor: pointer; accent-color: var(--primary);">
+                  </th>
+                  <th>Name</th>
+                  <th>Phone Number</th>
+                  <th>Group</th>
+                  <th>Consent Status</th>
+                </tr>
+              </thead>
+              <tbody id="tpl-contacts-tbody">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- SECTION B: MEDIA (OPTIONAL) -->
+        <div class="template-section-card" id="tpl-section-media">
+          <div class="template-section-header">
+            <div>
+              <div class="template-section-title">
+                <span>Section B — Media (Optional)</span>
+                <span class="badge badge-neutral" id="tpl-media-count-badge">0 assets</span>
+              </div>
+              <div class="template-section-sub">
+                Attach images, videos, or documents. In 'Mix Variations' mode, 1 active media will be paired with 1 text per recipient.
+              </div>
+            </div>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+              <input type="file" id="tpl-media-file-input" class="visually-hidden" multiple accept="image/png,image/jpeg,image/webp,application/pdf,video/mp4" onchange="app.onTemplateMediaFilesSelected(event)">
+              <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('tpl-media-file-input').click()">
+                + Upload Media
+              </button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="app.openTemplateMediaPickerModal()">
+                + Choose from Library
+              </button>
+            </div>
+          </div>
+
+          <!-- Bulk Media Actions Bar (shown when 1+ media selected) -->
+          <div id="tpl-media-bulk-bar" style="display: none; align-items: center; justify-content: space-between; padding: 0.45rem 1.25rem; background: var(--bg-surface-elevated, #1a1e24); border-bottom: 1px solid var(--border-color); font-size: 0.8125rem;">
+            <strong id="tpl-media-bulk-count">0 selected</strong>
+            <div style="display: flex; gap: 0.35rem;">
+              <button type="button" class="btn btn-secondary btn-xs" onclick="app.bulkToggleTemplateMedia(1)">Include</button>
+              <button type="button" class="btn btn-secondary btn-xs" onclick="app.bulkToggleTemplateMedia(0)">Exclude</button>
+              <button type="button" class="btn btn-secondary btn-xs" onclick="app.bulkRemoveTemplateMedia()">Remove from Template</button>
+              <button type="button" class="btn btn-secondary btn-xs text-danger" onclick="app.bulkDeleteTemplateMediaPermanently()">Delete Permanently</button>
+              <button type="button" class="btn btn-subtle btn-xs" onclick="app.clearTemplateMediaSelection()">Clear</button>
+            </div>
+          </div>
+
+          <!-- Media Thumbnails Grid -->
+          <div style="padding: 1rem 1.25rem;">
+            <div class="media-set-grid" id="tpl-media-grid">
+              <!-- Dynamically populated -->
+            </div>
+            <!-- Empty state for media -->
+            <div id="tpl-media-empty-notice" style="display: none; padding: 1.5rem; text-align: center; color: var(--text-muted); font-size: 0.85rem; border: 1px dashed var(--border-color); border-radius: var(--radius-sm);">
+              No media attached. Messages will be sent as text-only. Click '+ Upload Media' or '+ Choose from Library' to attach images or videos.
+            </div>
+          </div>
+        </div>
+
+        <!-- SECTION C: TEXT VARIATIONS -->
+        <div class="template-section-card" id="tpl-section-texts">
+          <div class="template-section-header">
+            <div>
+              <div class="template-section-title">
+                <span>Section C — Text Variations</span>
+                <span class="badge badge-neutral" id="tpl-texts-count-badge">0 messages</span>
+              </div>
+              <div class="template-section-sub">
+                Write one or more variations. In 'Mix Variations' mode, 1 active text is assigned per recipient.
+              </div>
+            </div>
+            <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+              <button type="button" class="btn btn-subtle btn-sm" onclick="app.openVariablesHelpModal()">
+                ? Variables Guide
+              </button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="app.openPasteMultipleTextsModal()">
+                Paste Multiple
+              </button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="app.openImportTextsModal()">
+                Import TXT/CSV
+              </button>
+              <button type="button" class="btn btn-primary btn-sm" onclick="app.addTextVariationToActiveTemplate()">
+                + Add Message
+              </button>
+            </div>
+          </div>
+
+          <!-- Text Variations List -->
+          <div style="padding: 1rem 1.25rem; display: flex; flex-direction: column; gap: 0.85rem;" id="tpl-texts-list">
+            <!-- Dynamically populated with variation cards -->
+          </div>
+          <!-- Empty state for texts -->
+          <div id="tpl-texts-empty-notice" style="display: none; margin: 1rem 1.25rem; padding: 1.5rem; text-align: center; color: var(--text-muted); font-size: 0.85rem; border: 1px dashed var(--border-color); border-radius: var(--radius-sm);">
+            No message variations yet. Click '+ Add Message' or 'Paste Multiple' to add message copy.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 1B: DASHBOARD (LEGACY ALIAS) -->
+    <section class="page-container" id="tab-dashboard">
       <!-- Active Campaign Banner (Appears only during an active send) -->
       <div class="card" id="active-job-banner" style="display: none; border-color: var(--primary);">
         <div class="card-body" style="padding: 1rem 1.25rem;">
@@ -407,795 +631,188 @@
       </div>
     </section>
 
-    <!-- SECTION 3: MESSAGES -->
-    <section class="page-container" id="tab-messages">
-      <!-- Workspace Subnav (Sets vs Library vs Composer) -->
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
-        <div class="segmented-control" role="group" aria-label="Messages Workspace Views">
-          <button type="button" class="segmented-filter-btn active" id="subnav-msg-sets" onclick="app.switchMessagesSubView('sets')">Content Sets (Builder)</button>
-          <button type="button" class="segmented-filter-btn" id="subnav-msg-library" onclick="app.switchMessagesSubView('library')">Asset Library</button>
-          <button type="button" class="segmented-filter-btn" id="subnav-msg-composer" onclick="app.switchMessagesSubView('composer')">Message Composer</button>
-        </div>
-        <div id="sets-top-actions" style="display: flex; gap: 0.5rem;">
-          <button type="button" class="btn btn-secondary btn-sm" onclick="app.openVariablesHelpModal()">? Variables & Shortcuts</button>
-          <button type="button" class="btn btn-primary btn-sm" onclick="app.openNewSetModal('text')">+ New Set</button>
-        </div>
-      </div>
-
-      <!-- SUBVIEW 1: Reusable Content Sets Builder (Split Wireframe View) -->
-      <div id="msg-subview-sets">
-        <div class="sets-builder-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start;">
-          
-          <!-- Left Column: MEDIA SETS -->
-          <div class="card" id="media-set-card">
-            <div class="card-header" style="display: flex; flex-direction: column; gap: 0.5rem; padding: 0.75rem 1rem;">
-              <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                <div style="display: flex; align-items: center; gap: 0.5rem; flex: 1; flex-wrap: wrap;">
-                  <span style="font-weight: 700; font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--primary);">Media Set</span>
-                  <select class="form-select" id="media-set-select" style="max-width: 210px; padding: 0.25rem 0.5rem; font-size: 0.8125rem;" onchange="app.onMediaSetSelected(this.value)">
-                    <!-- Populated dynamically -->
-                  </select>
-                  <button type="button" class="btn btn-primary btn-sm" onclick="app.openNewSetModal('media')">+ New Set</button>
-                </div>
-                <div style="display: flex; gap: 0.35rem;">
-                  <input type="file" id="media-set-file-upload-input" class="visually-hidden" multiple accept="image/png,image/jpeg,image/webp,application/pdf,video/mp4" onchange="app.onMediaSetFilesSelected(event)">
-                  <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('media-set-file-upload-input').click()">Upload</button>
-                  <button type="button" class="btn btn-subtle btn-sm" onclick="app.duplicateActiveSet('media')" title="Duplicate active media set">Copy</button>
-                  <button type="button" class="btn btn-subtle btn-sm text-danger" onclick="app.deleteActiveSet('media')" title="Delete active media set">Delete</button>
-                </div>
-              </div>
-              <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; justify-content: space-between; align-items: center;">
-                <span>• Any one random per person or selected in bulk</span>
-                <span id="media-set-stats-badge" class="badge badge-neutral">0 assets</span>
-              </div>
-            </div>
-
-            <!-- Contextual Media Bulk Toolbar -->
-            <div id="media-set-bulk-bar" style="display: none; align-items: center; justify-content: space-between; padding: 0.45rem 1rem; background: var(--bg-surface-elevated, #1a1e24); border-bottom: 1px solid var(--border-color); font-size: 0.8125rem;">
-              <span id="media-set-bulk-count" style="font-weight: 600;">0 selected</span>
-              <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
-                <button type="button" class="btn btn-secondary btn-xs" onclick="app.bulkToggleSetItems('media', 1)">Include</button>
-                <button type="button" class="btn btn-secondary btn-xs" onclick="app.bulkToggleSetItems('media', 0)">Exclude</button>
-                <button type="button" class="btn btn-secondary btn-xs" onclick="app.promptMoveSetItems('media')">Move</button>
-                <button type="button" class="btn btn-secondary btn-xs" onclick="app.promptCopySetItems('media')">Copy</button>
-                <button type="button" class="btn btn-secondary btn-xs text-danger" onclick="app.bulkRemoveSetItems('media')">Remove</button>
-                <button type="button" class="btn btn-subtle btn-xs" onclick="app.clearSetSelection('media')">Clear</button>
-              </div>
-            </div>
-
-            <!-- Master Checkbox Header -->
-            <div style="padding: 0.5rem 1rem; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; font-size: 0.78rem; color: var(--text-secondary); background: var(--surface-subtle);">
-              <label style="display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; margin: 0; user-select: none;">
-                <input type="checkbox" id="chk-master-media-set" onchange="app.toggleSelectAllSetItems('media', this.checked)" style="accent-color: var(--primary); cursor: pointer;">
-                <span id="media-set-header-label">Select all items</span>
-              </label>
-              <button type="button" class="btn btn-subtle btn-xs" onclick="app.openAddMediaToSetModal()">+ Add From Library</button>
-            </div>
-
-            <!-- Media Items Grid (Cards) -->
-            <div class="card-body" id="media-set-items-grid" style="min-height: 380px; max-height: 600px; overflow-y: auto; padding: 0.75rem;">
-              <!-- Populated dynamically with media cards -->
+    <!-- SECTION 3: MEDIA LIBRARY (ALL UPLOADED ASSETS) -->
+    <section class="page-container" id="tab-media">
+      <div class="card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; padding: 0.85rem 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
+          <div>
+            <h2 class="card-title" style="margin: 0; font-size: 1.05rem;">Media Library</h2>
+            <div class="card-subtitle" id="medialib-count-label" style="font-size: 0.78rem; color: var(--text-muted);">
+              All durable uploaded assets in local storage
             </div>
           </div>
 
-          <!-- Right Column: TEXT SETS -->
-          <div class="card" id="text-set-card">
-            <div class="card-header" style="display: flex; flex-direction: column; gap: 0.5rem; padding: 0.75rem 1rem;">
-              <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                <div style="display: flex; align-items: center; gap: 0.5rem; flex: 1; flex-wrap: wrap;">
-                  <span style="font-weight: 700; font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--primary);">Text Set</span>
-                  <select class="form-select" id="text-set-select" style="max-width: 210px; padding: 0.25rem 0.5rem; font-size: 0.8125rem;" onchange="app.onTextSetSelected(this.value)">
-                    <!-- Populated dynamically -->
-                  </select>
-                  <button type="button" class="btn btn-primary btn-sm" onclick="app.openNewSetModal('text')">+ New Set</button>
-                </div>
-                <div style="display: flex; gap: 0.35rem;">
-                  <button type="button" class="btn btn-secondary btn-sm" onclick="app.openImportTextSetModal()">Import</button>
-                  <button type="button" class="btn btn-secondary btn-sm" onclick="app.exportActiveTextSet()">Export</button>
-                  <button type="button" class="btn btn-subtle btn-sm" onclick="app.duplicateActiveSet('text')" title="Duplicate active text set">Copy</button>
-                  <button type="button" class="btn btn-subtle btn-sm text-danger" onclick="app.deleteActiveSet('text')" title="Delete active text set">Delete</button>
-                </div>
-              </div>
-              <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; justify-content: space-between; align-items: center;">
-                <span>• Any one random per person or selected in bulk</span>
-                <span id="text-set-stats-badge" class="badge badge-neutral">0 messages</span>
-              </div>
+          <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+            <div class="segmented-control" role="group" aria-label="Media Filter">
+              <button type="button" class="segmented-filter-btn active" id="medialib-flt-all" onclick="app.filterMediaLibrary('all')">All</button>
+              <button type="button" class="segmented-filter-btn" id="medialib-flt-image" onclick="app.filterMediaLibrary('image')">Images</button>
+              <button type="button" class="segmented-filter-btn" id="medialib-flt-video" onclick="app.filterMediaLibrary('video')">Videos</button>
+              <button type="button" class="segmented-filter-btn" id="medialib-flt-doc" onclick="app.filterMediaLibrary('document')">Docs</button>
             </div>
-
-            <!-- Contextual Text Bulk Toolbar -->
-            <div id="text-set-bulk-bar" style="display: none; align-items: center; justify-content: space-between; padding: 0.45rem 1rem; background: var(--bg-surface-elevated, #1a1e24); border-bottom: 1px solid var(--border-color); font-size: 0.8125rem;">
-              <span id="text-set-bulk-count" style="font-weight: 600;">0 selected</span>
-              <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
-                <button type="button" class="btn btn-secondary btn-xs" onclick="app.bulkToggleSetItems('text', 1)">Include</button>
-                <button type="button" class="btn btn-secondary btn-xs" onclick="app.bulkToggleSetItems('text', 0)">Exclude</button>
-                <button type="button" class="btn btn-secondary btn-xs" onclick="app.promptMoveSetItems('text')">Move</button>
-                <button type="button" class="btn btn-secondary btn-xs" onclick="app.promptCopySetItems('text')">Copy</button>
-                <button type="button" class="btn btn-secondary btn-xs text-danger" onclick="app.bulkRemoveSetItems('text')">Remove</button>
-                <button type="button" class="btn btn-subtle btn-xs" onclick="app.clearSetSelection('text')">Clear</button>
-              </div>
-            </div>
-
-            <!-- Master Checkbox Header -->
-            <div style="padding: 0.5rem 1rem; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; font-size: 0.78rem; color: var(--text-secondary); background: var(--surface-subtle);">
-              <label style="display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; margin: 0; user-select: none;">
-                <input type="checkbox" id="chk-master-text-set" onchange="app.toggleSelectAllSetItems('text', this.checked)" style="accent-color: var(--primary); cursor: pointer;">
-                <span id="text-set-header-label">Select all messages</span>
-              </label>
-              <button type="button" class="btn btn-subtle btn-xs" onclick="app.openAddTemplatesToSetModal()">+ Add From Library</button>
-            </div>
-
-            <!-- Text Items List (Wireframe Rows) -->
-            <div class="card-body" id="text-set-items-list" style="min-height: 280px; max-height: 440px; overflow-y: auto; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem;">
-              <!-- Populated dynamically with message rows -->
-            </div>
-
-            <!-- Inline "+ Add Message to Set" Input Bar (Wireframe Arrow Target) -->
-            <div class="card-footer" style="padding: 0.75rem 1rem; background: var(--surface-subtle); border-top: 1px solid var(--border-color);">
-              <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-                <div style="display: flex; gap: 0.5rem; align-items: center;">
-                  <input type="text" id="inline-msg-title" class="form-input" placeholder="Message Title (e.g. November Offer)" style="flex: 1; font-size: 0.8125rem;">
-                  <div style="display: flex; gap: 0.25rem;">
-                    <button type="button" class="btn btn-secondary btn-xs" onclick="app.insertInlineVar('{name}')">{name}</button>
-                    <button type="button" class="btn btn-secondary btn-xs" onclick="app.insertInlineVar('{first_name}')">{first_name}</button>
-                    <button type="button" class="btn btn-secondary btn-xs" onclick="app.openVariablesHelpModal()" title="Variables & Shortcuts Help">?</button>
-                  </div>
-                </div>
-                <div style="display: flex; gap: 0.5rem;">
-                  <input type="text" id="inline-msg-content" class="form-input" placeholder="Hello {name}! Input text here..." style="flex: 1; font-size: 0.8125rem;">
-                  <button type="button" class="btn btn-primary btn-sm" onclick="app.addInlineMessageToActiveSet()">+ Add to Set</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-        </div>
-      </div>
-
-      <!-- SUBVIEW 2: Reusable Asset Library -->
-      <div id="msg-subview-library" style="display: none;">
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-          <!-- Left Panel: Media Assets Bin -->
-          <div class="card">
-            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem;">
-              <div>
-                <span class="card-title">Media Library</span>
-                <div class="card-subtitle" id="library-media-count-label">0 assets stored</div>
-              </div>
-              <div style="display: flex; gap: 0.25rem;">
-                <input type="file" id="lib-workspace-upload-input" class="visually-hidden" accept="image/png,image/jpeg,image/webp,application/pdf,video/mp4" onchange="app.onLibraryUploadSelected(event)">
-                <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('lib-workspace-upload-input').click()">+ Upload</button>
-                <button type="button" class="btn btn-subtle btn-sm" onclick="app.loadLibraryAssets('all')">All</button>
-                <button type="button" class="btn btn-subtle btn-sm" onclick="app.loadLibraryAssets('image')">Images</button>
-                <button type="button" class="btn btn-subtle btn-sm" onclick="app.loadLibraryAssets('document')">Docs</button>
-              </div>
-            </div>
-            <div class="card-body" id="library-media-grid" style="max-height: 480px; overflow-y: auto; padding: 0.75rem;">
-              <!-- Dynamically populated -->
-            </div>
-          </div>
-
-          <!-- Right Panel: Message Templates Library -->
-          <div class="card">
-            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem;">
-              <div>
-                <span class="card-title">Saved Templates Library</span>
-                <div class="card-subtitle" id="library-templates-count-label">Reusable messages</div>
-              </div>
-              <button type="button" class="btn btn-primary btn-sm" onclick="app.switchMessagesSubView('composer')">+ New Message</button>
-            </div>
-            <div class="card-body" id="library-templates-list" style="max-height: 480px; overflow-y: auto; padding: 0.75rem;">
-              <!-- Dynamically populated templates -->
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- SUBVIEW 3: Message Composer & Live Phone Preview -->
-      <div id="msg-subview-composer" style="display: none;">
-      <!-- Composer & Preview Split Layout -->
-      <div class="composer-grid">
-        <!-- Left Column: Message Editor -->
-        <div class="card">
-          <div class="card-header">
-            <div>
-              <div class="card-title" id="message-editor-title">Message Draft</div>
-              <div class="card-subtitle">Compose your message and personalized tags</div>
-            </div>
-            <button class="btn btn-subtle btn-sm" onclick="app.resetMessageEditor()">New Draft</button>
-          </div>
-          <div class="card-body">
-            <input type="hidden" id="msg-edit-id" value="">
-
-            <!-- Draft Recovery Alert -->
-            <div id="draft-recovered-banner" style="display: none; background: var(--primary-subtle); color: var(--primary); padding: 0.45rem 0.75rem; border-radius: var(--radius-sm); font-size: 0.78rem; margin-bottom: 0.85rem; justify-content: space-between; align-items: center;">
-              <span>Unsaved draft restored from local storage</span>
-              <button type="button" class="btn btn-subtle btn-sm" style="padding: 0.1rem 0.35rem; font-size: 0.72rem; color: var(--primary);" onclick="app.clearDraftStorage()">Discard Draft</button>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">Message Title</label>
-              <input type="text" class="form-input" id="msg-title-input" placeholder="e.g. Appointment Reminder, Order Update" oninput="app.onMessageEditorChange()">
-            </div>
-
-            <div class="form-group">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
-                <label class="form-label" style="margin-bottom: 0;">Message Content</label>
-                <div style="display: flex; gap: 0.25rem;">
-                  <button type="button" class="btn btn-secondary btn-sm" style="padding: 0.15rem 0.4rem; font-size: 0.72rem;" onclick="app.insertVar('{name}')">{name}</button>
-                  <button type="button" class="btn btn-secondary btn-sm" style="padding: 0.15rem 0.4rem; font-size: 0.72rem;" onclick="app.insertVar('{first_name}')">{first_name}</button>
-                  <button type="button" class="btn btn-secondary btn-sm" style="padding: 0.15rem 0.4rem; font-size: 0.72rem;" onclick="app.insertVar('{phone}')">{phone}</button>
-                </div>
-              </div>
-              <textarea class="form-textarea" id="msg-content-input" rows="6" placeholder="Hello {name}, your appointment is scheduled..." oninput="app.onMessageEditorChange()"></textarea>
-              <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; margin-top: 0.25rem;">
-                <span id="msg-char-counter" style="color: var(--text-muted);">0 / 1024 characters</span>
-                <span id="msg-validation-tag-hint" style="color: var(--text-secondary);">Supported tags: {name}, {first_name}, {phone}</span>
-              </div>
-              <div id="msg-validation-warning" style="display: none; font-size: 0.75rem; color: var(--danger); margin-top: 0.25rem;"></div>
-            </div>
-
-            <!-- Custom Media Upload Area -->
-            <div class="form-group">
-              <label class="form-label">Attachment (Optional)</label>
-              <div class="media-upload-container">
-                <input type="file" id="msg-media-file-input" class="visually-hidden" accept="image/png,image/jpeg,image/webp,application/pdf,video/mp4" onchange="app.onMediaFileSelected(event)">
-                
-                <!-- Unselected Dropzone State -->
-                <div class="media-dropzone" id="msg-media-dropzone" onclick="document.getElementById('msg-media-file-input').click()">
-                  <div class="media-dropzone-icon">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                  </div>
-                  <div class="media-dropzone-text">
-                    <button type="button" class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); document.getElementById('msg-media-file-input').click()">Upload File</button>
-                    <button type="button" class="btn btn-primary btn-sm" onclick="event.stopPropagation(); app.openMediaLibraryModal()">Browse Library</button>
-                    <span class="media-dropzone-prompt">or drag and drop here</span>
-                  </div>
-                  <div class="media-dropzone-hint">JPG, PNG, WebP, MP4, or PDF up to 16 MB · Stored durably</div>
-                </div>
-
-                <!-- Selected Attachment State -->
-                <div class="media-selected-card" id="msg-media-selected-card" style="display: none;">
-                  <div class="media-selected-thumb" id="msg-media-thumb-wrap">
-                    <img id="msg-media-thumb-img" src="" alt="Thumbnail" style="display: none;">
-                    <span id="msg-media-thumb-icon" class="media-file-icon">📎</span>
-                  </div>
-                  <div class="media-selected-info">
-                    <div class="media-selected-name" id="msg-media-selected-name">filename.jpg</div>
-                    <div class="media-selected-size" id="msg-media-selected-size">0 KB</div>
-                    <div id="msg-media-hash-badge" style="font-family: var(--font-mono); font-size: 0.65rem; color: var(--text-muted); display: none;"></div>
-                  </div>
-                  <div class="media-selected-actions">
-                    <button type="button" class="btn btn-subtle btn-sm" onclick="app.openMediaLibraryModal()">Change</button>
-                    <button type="button" class="btn btn-subtle btn-sm text-danger" id="btn-clear-media" onclick="app.clearMediaSelection()">Remove</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Message Versions (Optional) - Collapsed by default -->
-            <details class="advanced-box" id="msg-versions-details" style="margin-top: 1rem;">
-              <summary style="font-weight: 500; font-size: 0.85rem; cursor: pointer;">
-                Message versions (optional)
-              </summary>
-              <div style="padding-top: 0.75rem;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                  <div style="font-size: 0.75rem; color: var(--text-muted);">Send different wording based on recipient group or language</div>
-                  <button type="button" class="btn btn-secondary btn-sm" id="btn-add-version" onclick="app.openAddVersionModal()">+ Add Version</button>
-                </div>
-                <div id="message-versions-list" style="display: flex; flex-direction: column; gap: 0.4rem;">
-                  <!-- Populated dynamically -->
-                </div>
-              </div>
-            </details>
-          </div>
-          <div class="card-footer" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
-            <div style="display: flex; gap: 0.4rem;">
-              <button class="btn btn-secondary btn-sm" onclick="app.resetMessageEditor()">Clear</button>
-              <button class="btn btn-secondary btn-sm" id="btn-open-test-send" onclick="app.openTestSendModal()">Send Test Message</button>
-            </div>
-            <button class="btn btn-primary" onclick="app.saveMessageDraft()">Save Message</button>
+            <input type="file" id="medialib-file-upload-input" class="visually-hidden" multiple accept="image/png,image/jpeg,image/webp,application/pdf,video/mp4" onchange="app.onMediaLibraryFilesUploaded(event)">
+            <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('medialib-file-upload-input').click()">
+              + Upload Media
+            </button>
           </div>
         </div>
 
-        <!-- Right Column: High-Fidelity Conversation Preview -->
-        <div>
-          <div class="chat-preview-shell" id="chat-preview-shell">
-            <!-- 1. Top Controls Bar: Sample Persona & Viewport Mode Toggles -->
-            <div class="chat-preview-toolbar">
-              <div class="chat-preview-toolbar-left">
-                <span class="chat-preview-toolbar-label">Previewing as:</span>
-                <select id="preview-persona-select" class="form-select" style="width: auto; padding: 0.2rem 0.5rem; font-size: 0.75rem;" onchange="app.onPreviewPersonaChange()">
-                  <option value="standard">Alice Smith (+1 415 555-2671)</option>
-                  <option value="spanish">Carlos Gomez (es · +34 612 345 678)</option>
-                  <option value="vip">Victoria Stone (VIP · +44 7911 123456)</option>
-                  <option value="new_lead">David Lee (+1 212 555-0199)</option>
-                </select>
-              </div>
-              <div class="chat-preview-toolbar-right">
-                <div class="preview-mode-switch" role="group" aria-label="Preview viewport size">
-                  <button type="button" class="preview-mode-btn active" id="btn-preview-desktop" onclick="app.setPreviewViewport('desktop')" title="Desktop Web chat width">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-                    Desktop
-                  </button>
-                  <button type="button" class="preview-mode-btn" id="btn-preview-mobile" onclick="app.setPreviewViewport('mobile')" title="Compact mobile conversation width">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
-                    Mobile
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <!-- 2. Realistic Conversation Header -->
-            <div class="chat-conversation-header">
-              <div class="chat-avatar-wrap">
-                <div class="chat-avatar" id="preview-contact-avatar">AS</div>
-                <span class="chat-presence-dot" title="Online"></span>
-              </div>
-              <div class="chat-contact-info">
-                <div class="chat-contact-name" id="preview-contact-name">Alice Smith</div>
-                <div class="chat-contact-status" id="preview-contact-status">online · WhatsApp Web</div>
-              </div>
-              <div class="chat-header-actions">
-                <span class="chat-verified-badge" id="preview-audience-tag">Standard Tier</span>
-              </div>
-            </div>
-
-            <!-- 3. Conversation Canvas with Authentic Restrained Background -->
-            <div class="chat-canvas" id="chat-canvas">
-              <!-- Date Separator Badge -->
-              <div class="chat-date-separator">
-                <span>TODAY</span>
-              </div>
-
-              <!-- Contextual Incoming Bubble -->
-              <div class="chat-bubble chat-bubble-incoming" id="chat-bubble-incoming">
-                <div class="chat-bubble-content">Hi! Can you send me the latest update for my account?</div>
-                <div class="chat-bubble-meta">
-                  <span class="chat-bubble-time">10:41 AM</span>
-                </div>
-              </div>
-
-              <!-- Outgoing Live Message Preview Bubble -->
-              <div class="chat-bubble chat-bubble-outgoing" id="chat-bubble-outgoing">
-                <!-- Media Attachment Container -->
-                <div id="preview-media-container" style="display: none;">
-                  <!-- State A: Image/Banner -->
-                  <div id="preview-media-image-wrap" style="display: none;">
-                    <img id="preview-media-img" alt="Attached media preview" class="chat-media-img">
-                  </div>
-
-                  <!-- State B: Document File -->
-                  <div id="preview-media-doc-wrap" style="display: none;" class="chat-doc-card">
-                    <div class="chat-doc-icon">
-                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
-                    </div>
-                    <div class="chat-doc-details">
-                      <strong id="preview-doc-name">document.pdf</strong>
-                      <span id="preview-doc-meta">PDF document</span>
-                    </div>
-                  </div>
-
-                  <!-- State C: Media Loading Skeleton -->
-                  <div id="preview-media-loading" style="display: none;" class="chat-media-state chat-media-loading">
-                    <span style="display: inline-block; animation: spin 1s linear infinite; margin-right: 4px;">⟳</span> Loading media preview...
-                  </div>
-
-                  <!-- State D: Missing / Failed Media State -->
-                  <div id="preview-media-failed" style="display: none;" class="chat-media-state chat-media-failed">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                    <div>
-                      <strong>Media file missing or inaccessible</strong>
-                      <div style="font-size: 0.72rem; opacity: 0.85;">Attachment not found at specified path.</div>
-                    </div>
-                  </div>
-
-                  <!-- State E: Unsupported Media State -->
-                  <div id="preview-media-unsupported" style="display: none;" class="chat-media-state chat-media-unsupported">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="9" x2="15" y2="15"></line><line x1="15" y1="9" x2="9" y2="15"></line></svg>
-                    <div>
-                      <strong>Unsupported media format</strong>
-                      <div style="font-size: 0.72rem; opacity: 0.85;">Supported: JPG, PNG, MP4, and PDF.</div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Bubble Text with Accurate Wrapping -->
-                <div id="preview-bubble-text" class="chat-bubble-text">Hello, your message preview will appear here.</div>
-
-                <!-- Bubble Meta: Formatted Timestamp and Honest 'Draft Preview' indicator -->
-                <div class="chat-bubble-meta">
-                  <span id="preview-bubble-time" class="chat-bubble-time">10:42 AM</span>
-                  <span class="chat-preview-tag" title="Live draft preview rendered for this recipient">Draft Preview</span>
-                </div>
-              </div>
-
-              <!-- Empty Preview Notice (When composer content is empty) -->
-              <div id="preview-empty-state" style="display: none;" class="chat-empty-notice">
-                <div class="chat-empty-bubble">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-                  <span>Compose your message on the left to see live formatting, tags, and media as recipients will see them.</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- 4. Footer Note (Active Audience Version Rule) -->
-            <div class="chat-preview-footer">
-              <span id="preview-version-rule-text">Applies to: All recipients (Default version)</span>
-              <span class="chat-preview-tip">Variables dynamically resolved for this persona</span>
-            </div>
-          </div>
-
-          <!-- Saved Drafts List -->
-          <div class="card" style="margin-top: 1.25rem;">
-            <div class="card-header" style="padding: 0.75rem 1rem;">
-              <span class="card-title">Saved Messages</span>
-            </div>
-            <div class="card-body" id="messages-list-body" style="padding: 0;">
-              <!-- Populated dynamically -->
-            </div>
+        <!-- Bulk Selection Bar -->
+        <div id="medialib-bulk-bar" style="display: none; align-items: center; justify-content: space-between; padding: 0.5rem 1.25rem; background: var(--bg-surface-elevated, #1a1e24); border-bottom: 1px solid var(--border-color); font-size: 0.8125rem;">
+          <strong id="medialib-bulk-count">0 selected</strong>
+          <div style="display: flex; gap: 0.35rem;">
+            <button type="button" class="btn btn-secondary btn-xs text-danger" onclick="app.executeBulkDeleteMediaLibrary()">
+              Delete Permanently
+            </button>
+            <button type="button" class="btn btn-subtle btn-xs" onclick="app.clearMediaLibrarySelection()">
+              Clear
+            </button>
           </div>
         </div>
-      </div>
+
+        <!-- Media Grid -->
+        <div class="card-body" style="padding: 1.25rem;">
+          <div class="media-set-grid" id="medialib-grid" style="grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem;">
+            <!-- Dynamically populated -->
+          </div>
+          <!-- Clean Empty State -->
+          <div id="medialib-empty-state" style="display: none;" class="clean-empty-state">
+            <div class="clean-empty-icon">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+            </div>
+            <div class="clean-empty-title">No media assets found.</div>
+            <div class="clean-empty-subtitle">Upload pictures, videos, or documents to store them in your local library and attach to templates.</div>
+            <button type="button" class="btn btn-primary" onclick="document.getElementById('medialib-file-upload-input').click()">
+              + Upload Media
+            </button>
+          </div>
+        </div>
       </div>
     </section>
 
-    <!-- SECTION 4: CAMPAIGNS -->
+    <!-- SECTION 4: CAMPAIGNS (CLEAN SENDING PROGRESS & HISTORY) -->
     <section class="page-container" id="tab-campaigns">
-      <div class="campaigns-layout">
-        <!-- Main Form Column -->
-        <div class="card">
-          <div class="card-header">
-            <div>
-              <div class="card-title">Create Campaign</div>
-              <div class="card-subtitle">Send a personalized message broadcast to a selected audience</div>
-            </div>
-          </div>
-          <div class="card-body">
-            <!-- Campaign Draft Recovery Alert -->
-            <div id="camp-draft-recovered-banner" style="display: none; background: var(--primary-subtle); color: var(--primary); padding: 0.45rem 0.75rem; border-radius: var(--radius-sm); font-size: 0.78rem; margin-bottom: 0.85rem; justify-content: space-between; align-items: center;">
-              <span>Unsaved campaign draft restored</span>
-              <button type="button" class="btn btn-subtle btn-sm" style="padding: 0.1rem 0.35rem; font-size: 0.72rem; color: var(--primary);" onclick="app.clearCampaignDraftStorage()">Discard Draft</button>
-            </div>
-
-            <!-- 1. Campaign Name -->
-            <div class="form-group">
-              <label class="form-label">Campaign Name</label>
-              <input type="text" class="form-input" id="camp-name-input" placeholder="e.g. November Reminder, Customer Update" oninput="app.onCampaignEditorChange()">
-            </div>
-
-            <!-- 2. Target Audience Group -->
-            <div class="form-group">
-              <label class="form-label">Target Audience Group</label>
-              <select class="form-select" id="camp-group-select" onchange="app.onCampaignAudienceChange()">
-                <option value="Default">Default</option>
-              </select>
-            </div>
-
-            <!-- 2b. Content Assignment Source -->
-            <div class="form-group">
-              <label class="form-label">Campaign Content Assignment Source</label>
-              <div class="radio-card-group" role="radiogroup" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 0.75rem;">
-                <label class="radio-card active selected" id="source-label-sets" for="source-radio-sets">
-                  <input type="radio" name="camp-content-source" id="source-radio-sets" value="sets" class="radio-card-input" checked onchange="app.onCampaignContentSourceChange('sets')">
-                  <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; margin-bottom: 0.25rem;">
-                    <span style="font-weight: 600; font-size: 0.85rem;">Content Sets</span>
-                    <span class="radio-indicator" aria-hidden="true"></span>
-                  </div>
-                  <div style="font-size: 0.72rem; color: var(--text-muted);">Text & Media Sets</div>
-                </label>
-                <label class="radio-card" id="source-label-single" for="source-radio-single">
-                  <input type="radio" name="camp-content-source" id="source-radio-single" value="single" class="radio-card-input" onchange="app.onCampaignContentSourceChange('single')">
-                  <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; margin-bottom: 0.25rem;">
-                    <span style="font-weight: 600; font-size: 0.85rem;">Single Message</span>
-                    <span class="radio-indicator" aria-hidden="true"></span>
-                  </div>
-                  <div style="font-size: 0.72rem; color: var(--text-muted);">One draft + media</div>
-                </label>
-                <label class="radio-card" id="source-label-collection" for="source-radio-collection">
-                  <input type="radio" name="camp-content-source" id="source-radio-collection" value="collection" class="radio-card-input" onchange="app.onCampaignContentSourceChange('collection')">
-                  <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; margin-bottom: 0.25rem;">
-                    <span style="font-weight: 600; font-size: 0.85rem;">Collection</span>
-                    <span class="radio-indicator" aria-hidden="true"></span>
-                  </div>
-                  <div style="font-size: 0.72rem; color: var(--text-muted);">Fixed pairs</div>
-                </label>
-              </div>
-            </div>
-
-            <!-- Content Sets Options Container -->
-            <div id="camp-source-container-sets">
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
-                <div class="form-group">
-                  <label class="form-label">Select Text Set</label>
-                  <select class="form-select" id="camp-text-set-select" onchange="app.onCampaignContentChange()">
-                    <!-- Populated dynamically -->
-                  </select>
-                </div>
-                <div class="form-group">
-                  <label class="form-label">Attach Media Set (Optional)</label>
-                  <select class="form-select" id="camp-media-set-select" onchange="app.onCampaignContentChange()">
-                    <option value="">-- No media set (Text only) --</option>
-                  </select>
-                </div>
-              </div>
-              <div class="form-hint" style="margin-top: -0.25rem; margin-bottom: 0.75rem;">
-                Distributes messages and media across recipients based on set allocation mode. Excluded items are automatically bypassed.
-              </div>
-            </div>
-
-            <!-- Single Draft Container -->
-            <div id="camp-source-container-single" style="display: none;">
-              <div class="form-group">
-                <label class="form-label">Select Message</label>
-                <select class="form-select" id="camp-template-select" onchange="app.onCampaignMessageChange()">
-                  <option value="">-- Choose saved message --</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label class="form-label">Attach Media (Optional)</label>
-                <select class="form-select" id="camp-media-select" onchange="app.onCampaignContentChange()">
-                  <option value="">-- No media attachment (Text only) --</option>
-                </select>
-              </div>
-            </div>
-
-            <!-- Collection Container -->
-            <div id="camp-source-container-collection" style="display: none;">
-              <div class="form-group">
-                <label class="form-label">Content Collection</label>
-                <select class="form-select" id="camp-collection-select" onchange="app.onCampaignCollectionChange()">
-                  <option value="">-- Choose collection --</option>
-                </select>
-                <div class="form-hint">Assigns approved message & media combinations to recipients.</div>
-              </div>
-            </div>
-
-            <!-- 3c. Message Variant Allocation Strategy -->
-            <div class="form-group">
-              <label class="form-label">Variant Allocation Strategy</label>
-              <select class="form-select" id="camp-allocation-method" onchange="app.onAllocationMethodChange()">
-                <option value="explicit_default">Explicit Default (Send base template)</option>
-                <option value="rule_based">Rule-Based Matching (Target tier/language/attributes)</option>
-                <option value="balanced_rotation">Balanced Rotation (Round-robin across approved variants)</option>
-                <option value="ab_test">Reproducible A/B Testing (Deterministic hash split)</option>
-              </select>
-              <div id="camp-ab-seed-box" style="display: none; margin-top: 0.5rem;">
-                <label class="form-label" style="font-size: 0.75rem;">A/B Test Random Seed</label>
-                <input type="number" class="form-input" id="camp-allocation-seed" value="42" style="max-width: 140px;">
-                <div class="form-hint">Seed ensures identical recipients receive identical variants across retries.</div>
-              </div>
-            </div>
-
-            <!-- 4. Sending Pace -->
-            <div class="form-group">
-              <label class="form-label">Sending Pace</label>
-              <div class="radio-card-group" role="radiogroup" aria-label="Sending Pace Options" style="grid-template-columns: repeat(3, 1fr);">
-                <!-- Normal Pace -->
-                <label class="radio-card pace-option-card active selected" id="pace-label-normal" for="pace-radio-normal">
-                  <input type="radio" name="camp-pace" id="pace-radio-normal" value="balanced" class="radio-card-input" checked onchange="app.setCampaignPace('balanced')">
-                  <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; margin-bottom: 0.25rem;">
-                    <span style="font-weight: 600; font-size: 0.85rem;">Normal</span>
-                    <span class="radio-indicator" aria-hidden="true"></span>
-                  </div>
-                  <div style="font-size: 0.72rem; color: var(--text-muted);">8–15s delay</div>
-                </label>
-
-                <!-- Relaxed Pace -->
-                <label class="radio-card pace-option-card" id="pace-label-relaxed" for="pace-radio-relaxed">
-                  <input type="radio" name="camp-pace" id="pace-radio-relaxed" value="safe" class="radio-card-input" onchange="app.setCampaignPace('safe')">
-                  <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; margin-bottom: 0.25rem;">
-                    <span style="font-weight: 600; font-size: 0.85rem;">Relaxed</span>
-                    <span class="radio-indicator" aria-hidden="true"></span>
-                  </div>
-                  <div style="font-size: 0.72rem; color: var(--text-muted);">12–20s delay</div>
-                </label>
-
-                <!-- Fast Pace -->
-                <label class="radio-card pace-option-card" id="pace-label-fast" for="pace-radio-fast">
-                  <input type="radio" name="camp-pace" id="pace-radio-fast" value="fast" class="radio-card-input" onchange="app.setCampaignPace('fast')">
-                  <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; margin-bottom: 0.25rem;">
-                    <span style="font-weight: 600; font-size: 0.85rem;">Fast</span>
-                    <span class="radio-indicator" aria-hidden="true"></span>
-                  </div>
-                  <div style="font-size: 0.72rem; color: var(--text-muted);">4–8s delay</div>
-                </label>
-              </div>
-            </div>
-
-            <!-- 5. Dispatch Schedule -->
-            <div class="form-group">
-              <label class="form-label">Dispatch Timing</label>
-              <div style="display: flex; gap: 1.25rem; align-items: center; margin-bottom: 0.5rem;">
-                <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer;">
-                  <input type="radio" name="camp-schedule-mode" value="now" checked onchange="app.toggleScheduleMode('now')">
-                  <span>Send immediately</span>
-                </label>
-                <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer;">
-                  <input type="radio" name="camp-schedule-mode" value="later" onchange="app.toggleScheduleMode('later')">
-                  <span>Schedule for later</span>
-                </label>
-              </div>
-              <div id="camp-schedule-box" style="display: none; margin-top: 0.5rem;">
-                <input type="datetime-local" class="form-input" id="camp-schedule-datetime" style="max-width: 280px;">
-                <div class="form-hint">Campaign will automatically stage recipients and begin sending at the scheduled time.</div>
-              </div>
-            </div>
-
-            <!-- 6. Progressive Disclosure: Advanced Options (Collapsed) -->
-            <details class="advanced-box">
-              <summary style="font-weight: 500; font-size: 0.85rem; cursor: pointer;">Advanced delivery settings (pacing details, daily cap, retries)</summary>
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.75rem;">
-                <div>
-                  <label class="form-label">Min Delay (seconds)</label>
-                  <input type="number" class="form-input" id="camp-min-delay" value="8" min="1" max="60" oninput="app.updateCampaignReview()">
-                </div>
-                <div>
-                  <label class="form-label">Max Delay (seconds)</label>
-                  <input type="number" class="form-input" id="camp-max-delay" value="15" min="1" max="120" oninput="app.updateCampaignReview()">
-                </div>
-                <div>
-                  <label class="form-label">Daily Limit</label>
-                  <input type="number" class="form-input" id="camp-daily-cap" value="100" min="1" max="1000">
-                </div>
-                <div>
-                  <label class="form-label">Max Retries on Error</label>
-                  <input type="number" class="form-input" id="camp-max-retries" value="3" min="0" max="5">
-                </div>
-              </div>
-            </details>
-
-            <!-- Simulation Toggle -->
-            <div style="margin-top: 1rem;">
-              <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem; color: var(--text-secondary); cursor: pointer;">
-                <input type="checkbox" id="camp-use-mock">
-                <span>Run in <strong>Simulation Mode</strong> (tests queue and preview without opening WhatsApp)</span>
-              </label>
-            </div>
-          </div>
-        </div>
-
-        <!-- Right Summary Column (Sticky) -->
-        <div class="campaign-summary-col">
-          <div class="card">
-            <div class="card-header" style="padding: 0.75rem 1rem;">
-              <span class="card-title">Pre-Flight Summary</span>
-            </div>
-            <div class="card-body" style="padding: 1rem;">
-              <!-- Selected Message Snippet -->
-              <div class="summary-item">
-                <span class="summary-label">Selected Message</span>
-                <div id="camp-summary-msg-name" class="summary-val-highlight">None selected</div>
-                <div id="camp-summary-msg-snippet" class="summary-snippet">Choose a message template to review content.</div>
-              </div>
-
-              <!-- Audience Breakdown Grid -->
-              <div class="summary-metrics-grid">
-                <div class="summary-stat">
-                  <span class="summary-stat-label">Eligible Contacts</span>
-                  <span class="summary-stat-value success" id="camp-rev-selected">0 contacts</span>
-                </div>
-                <div class="summary-stat">
-                  <span class="summary-stat-label">Suppressed / Opt-Out</span>
-                  <span class="summary-stat-value warning" id="camp-rev-excluded">0 excluded</span>
-                </div>
-                <div class="summary-stat">
-                  <span class="summary-stat-label">Duplicate Numbers</span>
-                  <span class="summary-stat-value" id="camp-rev-duplicates" style="color: var(--text-muted);">0 duplicate</span>
-                </div>
-                <div class="summary-stat">
-                  <span class="summary-stat-label">Estimated Send Window</span>
-                  <span class="summary-stat-value" id="camp-rev-time">—</span>
-                </div>
-              </div>
-
-              <!-- Launch Action & Validation Explanation -->
-              <div class="campaign-launch-gate">
-                <button class="btn btn-primary btn-block" id="btn-start-campaign" onclick="app.startCampaign()" disabled>
-                  Start Campaign
-                </button>
-                <div class="campaign-missing-hint" id="camp-validation-hint">
-                  Please enter a campaign name, select an audience, and choose a message template.
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Pre-Send Recipient Content Allocation Preview Table -->
-      <div class="card" style="margin-top: 1rem;" id="camp-allocation-preview-card">
-        <div class="card-header" style="padding: 0.75rem 1rem; display: flex; justify-content: space-between; align-items: center;">
-          <div>
-            <span class="card-title">Pre-Send Recipient Content Allocations</span>
-            <div class="card-subtitle">Verify assigned Message and Media for each recipient before sending</div>
-          </div>
-          <button type="button" class="btn btn-secondary btn-sm" onclick="app.refreshAllocationPreview()">Refresh Allocations</button>
-        </div>
-        <div class="card-body" id="camp-allocation-preview-body" style="padding: 0; max-height: 280px; overflow-y: auto;">
-          <div style="padding: 1.5rem; text-align: center; color: var(--text-muted); font-size: 0.8125rem;">
-            Select an audience and message/collection to preview assigned recipients.
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- SECTION 5: ACTIVITY -->
-    <section class="page-container" id="tab-activity">
-      <!-- Activity Filters -->
-      <div class="card" style="margin-bottom: 1rem;">
-        <div class="card-body" style="padding: 0.75rem 1rem;">
-          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
-            <div class="segmented-control" role="group" aria-label="Filter activity by status">
-              <button class="segmented-filter-btn active" id="act-filter-all" aria-pressed="true" onclick="app.setActivityFilter('ALL')">All</button>
-              <button class="segmented-filter-btn" id="act-filter-active" aria-pressed="false" onclick="app.setActivityFilter('ACTIVE')">Active</button>
-              <button class="segmented-filter-btn" id="act-filter-scheduled" aria-pressed="false" onclick="app.setActivityFilter('SCHEDULED')">Scheduled</button>
-              <button class="segmented-filter-btn" id="act-filter-completed" aria-pressed="false" onclick="app.setActivityFilter('COMPLETED')">Completed</button>
-              <button class="segmented-filter-btn" id="act-filter-paused" aria-pressed="false" onclick="app.setActivityFilter('PAUSED')">Paused</button>
-              <button class="segmented-filter-btn" id="act-filter-failed" aria-pressed="false" onclick="app.setActivityFilter('FAILED')">Failed</button>
-            </div>
-            <button class="btn btn-secondary btn-sm" onclick="app.loadActivityData()">Refresh</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Live Campaign Progress Card (Shown when an active job is queued, running, waiting, or paused) -->
-      <div class="live-campaign-card" id="act-live-card" style="display: none;">
-        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem;">
-          <div>
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
-              <strong style="font-size: 0.95rem;" id="act-live-camp-name">November Campaign</strong>
-              <span class="badge badge-warning" id="act-live-camp-badge">Waiting for connection</span>
-            </div>
-            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.15rem;" id="act-live-current-recipient">
-              Currently processing: +1 415 ••• ••71 (Alice Smith)
-            </div>
+      <!-- 1. LIVE SENDING PROGRESS VIEW -->
+      <div class="card" id="campaign-progress-card" style="margin-bottom: 1.5rem; display: none; border-color: var(--primary);">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; padding: 0.85rem 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
+          <div style="display: flex; align-items: center; gap: 0.65rem;">
+            <span class="badge badge-primary" id="prog-badge-status">SENDING</span>
+            <strong style="font-size: 1.05rem;" id="prog-campaign-name">Active Campaign</strong>
+            <span style="font-size: 0.78rem; color: var(--text-muted);" id="prog-started-time">Started: Just now</span>
           </div>
           <div style="display: flex; gap: 0.4rem; align-items: center;">
-            <button class="btn btn-secondary btn-sm" id="btn-live-inspect" onclick="app.inspectActiveJobDrawer()">Inspect Recipients</button>
-            <button class="btn btn-secondary btn-sm" id="btn-live-pause" onclick="app.pauseActiveJob()">Pause</button>
-            <button class="btn btn-primary btn-sm" id="btn-live-resume" style="display: none;" onclick="app.resumeActiveJob()">Resume</button>
-            <button class="btn btn-subtle btn-sm" id="btn-live-cancel" style="color: var(--danger);" onclick="app.cancelActiveJob()">Cancel</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-prog-pause" onclick="app.toggleActiveJobPause()">Pause</button>
+            <button type="button" class="btn btn-danger btn-sm" id="btn-prog-cancel" onclick="app.cancelActiveJob()">Stop Broadcast</button>
+            <button type="button" class="btn btn-primary btn-sm" onclick="app.navigate('templates')">+ New Broadcast</button>
           </div>
         </div>
 
-        <!-- Progress bar -->
-        <div class="live-progress-track">
-          <div class="live-progress-fill" id="act-live-progress-bar" style="width: 0%;"></div>
-        </div>
+        <div class="card-body" style="padding: 1.25rem;">
+          <!-- Progress Bar & Ratio -->
+          <div style="margin-bottom: 1.25rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem; font-size: 0.85rem;">
+              <span id="prog-progress-label">Dispatch Progress</span>
+              <strong id="prog-progress-text">0 / 0 processed (0%)</strong>
+            </div>
+            <div style="height: 10px; background-color: var(--surface-subtle); border-radius: var(--radius-sm); overflow: hidden;">
+              <div id="prog-progress-bar" style="height: 100%; width: 100%; background-color: var(--primary); transform: scaleX(0); transform-origin: left; transition: transform 0.25s ease;"></div>
+            </div>
+          </div>
 
-        <!-- Metrics Strip -->
-        <div class="live-stats-strip">
-          <div class="live-stat-item">Progress: <strong id="act-live-stat-pct">0%</strong></div>
-          <div class="live-stat-item">Sent: <strong style="color: var(--success);" id="act-live-stat-sent">0</strong></div>
-          <div class="live-stat-item">Pending: <strong style="color: var(--text-secondary);" id="act-live-stat-pending">0</strong></div>
-          <div class="live-stat-item">Failed: <strong style="color: var(--danger);" id="act-live-stat-failed">0</strong></div>
-          <div class="live-stat-item">Suppressed: <strong style="color: var(--text-muted);" id="act-live-stat-skipped">0</strong></div>
-        </div>
+          <!-- 4 Big Metric Counters: Sent, Pending, Failed, Uncertain -->
+          <div class="progress-stat-grid">
+            <div class="progress-stat-card sent">
+              <span class="progress-stat-number" id="prog-cnt-sent">0</span>
+              <span class="progress-stat-label">🟢 Sent</span>
+            </div>
+            <div class="progress-stat-card pending">
+              <span class="progress-stat-number" id="prog-cnt-pending">0</span>
+              <span class="progress-stat-label">⏳ Pending</span>
+            </div>
+            <div class="progress-stat-card failed">
+              <span class="progress-stat-number" id="prog-cnt-failed">0</span>
+              <span class="progress-stat-label">🔴 Failed</span>
+            </div>
+            <div class="progress-stat-card uncertain">
+              <span class="progress-stat-number" id="prog-cnt-uncertain">0</span>
+              <span class="progress-stat-label">🟡 Uncertain</span>
+            </div>
+          </div>
 
-        <!-- Last Action / Reason Ticker -->
-        <div style="margin-top: 0.6rem; font-size: 0.75rem; color: var(--text-secondary); display: flex; justify-content: space-between; align-items: center; background: var(--surface-subtle); padding: 0.4rem 0.65rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
-          <span id="act-live-last-action">Last action: Initialized queue</span>
-          <span id="act-live-last-error" style="color: var(--danger); display: none;"></span>
+          <!-- Pacing & Current Activity Status Bar -->
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; color: var(--text-secondary); background: var(--surface-subtle); padding: 0.5rem 0.85rem; border-radius: var(--radius-sm); margin-bottom: 1rem; border: 1px solid var(--border-color);">
+            <span id="prog-current-activity">Currently processing: Initializing queue...</span>
+            <span id="prog-pacing-info">Pacing: 8–16s delay between messages</span>
+          </div>
+
+          <!-- Live Dispatch Table -->
+          <div>
+            <div style="font-size: 0.8125rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.5rem;">
+              Live Dispatch Feed
+            </div>
+            <div style="max-height: 340px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: var(--radius-sm);">
+              <table class="data-table" style="width: 100%; margin: 0; font-size: 0.8125rem;">
+                <thead>
+                  <tr>
+                    <th>Recipient</th>
+                    <th>Phone</th>
+                    <th>Media</th>
+                    <th>Message Preview</th>
+                    <th>Status</th>
+                    <th>Time</th>
+                    <th>Details</th>
+                  </tr>
+                </thead>
+                <tbody id="prog-dispatch-tbody">
+                  <!-- Dynamically populated -->
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
 
-      <!-- Activity Table -->
-      <div class="card">
-        <div class="card-header" style="padding: 0.75rem 1rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
-          <div style="display: flex; align-items: center; gap: 0.5rem;">
-            <span class="card-title">Activity Log</span>
-            <span style="font-size: 0.78rem; color: var(--text-muted);" id="activity-count-label">0 items</span>
+      <!-- 2. PAST CAMPAIGNS HISTORY VIEW -->
+      <div class="card" id="campaign-history-card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; padding: 0.85rem 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
+          <div>
+            <h2 class="card-title" style="margin: 0; font-size: 1.05rem;">Past Broadcast Campaigns</h2>
+            <div class="card-subtitle" style="font-size: 0.78rem; color: var(--text-muted);">
+              Historical dispatches, delivery logs, and results
+            </div>
           </div>
-          <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.78rem; color: var(--text-secondary); cursor: pointer; user-select: none;">
-            <input type="checkbox" id="privacy-mode-toggle" onchange="app.togglePrivacyMode()">
-            <span>Privacy Mode (Mask Numbers)</span>
-          </label>
+          <div style="display: flex; gap: 0.5rem;">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="app.loadCampaignsData()">Refresh</button>
+            <button type="button" class="btn btn-primary btn-sm" onclick="app.navigate('templates')">+ Launch Broadcast</button>
+          </div>
         </div>
-        <div class="card-body" id="activity-table-body" style="padding: 0;">
-          <!-- Dynamically populated or empty state -->
+
+        <div class="card-body" style="padding: 0;">
+          <div style="max-height: 480px; overflow-y: auto;">
+            <table class="data-table" style="width: 100%; margin: 0; font-size: 0.8125rem;">
+              <thead>
+                <tr>
+                  <th>Campaign Name</th>
+                  <th>Status</th>
+                  <th>Delivered / Total</th>
+                  <th>Created At</th>
+                  <th style="text-align: right;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="campaign-history-tbody">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+          <div id="campaign-history-empty" style="display: none; padding: 2.5rem 1.5rem; text-align: center; color: var(--text-muted); font-size: 0.85rem;">
+            No past broadcast campaigns found. Create a template and click 'Review & Send' to start your first send.
+          </div>
         </div>
       </div>
     </section>
+
+    <!-- SECTION COMPATIBILITY ALIASES (HIDDEN) -->
+    <div id="tab-messages" style="display: none;"></div>
+    <div id="tab-activity" style="display: none;"></div>
 
     <!-- SECTION 6: SETTINGS -->
     <section class="page-container" id="tab-settings">
@@ -2546,6 +2163,262 @@
       <div class="modal-footer">
         <button class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-move-copy-set-items')">Cancel</button>
         <button class="btn btn-primary btn-sm" id="btn-confirm-move-copy" onclick="app.confirmMoveCopySetItems()">Transfer Items</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Create New Template -->
+  <div class="modal-backdrop" id="modal-new-template">
+    <div class="modal-card" style="max-width: 500px;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title">Create Template</h3>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">Set up a reusable bulk messaging configuration</div>
+        </div>
+        <button class="modal-close" onclick="app.closeModal('modal-new-template')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Template Name <span style="color: var(--danger);">*</span></label>
+          <input type="text" class="form-input" id="new-tpl-name" placeholder="e.g. Winter Sale, Event Invite, Follow-up 1">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description (Optional)</label>
+          <input type="text" class="form-input" id="new-tpl-desc" placeholder="e.g. Seasonal promo to retail customers">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Content Selection Mode</label>
+          <select class="form-select" id="new-tpl-mode">
+            <option value="mix_variations">Option 2: Mix variations (1 media + 1 text assigned per recipient)</option>
+            <option value="same_for_everyone">Option 1: Same for everyone (1 media + 1 text to all)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Default Target Audience</label>
+          <select class="form-select" id="new-tpl-group">
+            <option value="All">All Contacts</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-new-template')">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm" onclick="app.submitNewTemplate()">Create & Open</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Import Template -->
+  <div class="modal-backdrop" id="modal-import-template">
+    <div class="modal-card" style="max-width: 520px;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title">Import Template</h3>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">Import saved template configuration JSON</div>
+        </div>
+        <button class="modal-close" onclick="app.closeModal('modal-import-template')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Choose JSON File</label>
+          <input type="file" class="form-input" id="import-tpl-file" accept=".json" onchange="app.onTemplateFileSelected(event)">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Or Paste JSON Content</label>
+          <textarea class="form-textarea" id="import-tpl-json" rows="6" placeholder="Paste template JSON structure here..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-import-template')">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm" onclick="app.submitImportTemplate()">Import Template</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Paste Multiple Texts -->
+  <div class="modal-backdrop" id="modal-paste-multiple-texts">
+    <div class="modal-card" style="max-width: 600px;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title">Paste Multiple Message Variations</h3>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">Add several message variations at once split by newline or delimiter</div>
+        </div>
+        <button class="modal-close" onclick="app.closeModal('modal-paste-multiple-texts')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Message Variations</label>
+          <textarea class="form-textarea" id="paste-multiple-raw-text" rows="8" placeholder="Enter message variations here...&#10;&#10;Hey {first_name}, check out our winter sale!&#10;&#10;Hi {name}, our seasonal specials are now live: ..."></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Split Variations By</label>
+          <select class="form-select" id="paste-multiple-delimiter">
+            <option value="empty_line">Empty Line (Double Return)</option>
+            <option value="newline">Every Newline</option>
+            <option value="separator">Separator: ---</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-paste-multiple-texts')">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm" onclick="app.submitPasteMultipleTexts()">+ Add Variations</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Transparent Assignment Preview -->
+  <div class="modal-backdrop" id="modal-preview-assignments">
+    <div class="modal-card" style="max-width: 820px;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title">Transparent Assignment Preview</h3>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">Inspect the exact 1-media + 1-text assignment for every recipient before sending</div>
+        </div>
+        <button class="modal-close" onclick="app.closeModal('modal-preview-assignments')">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 0;">
+        <div style="padding: 0.75rem 1.25rem; background: var(--surface-subtle); border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+          <div style="font-size: 0.8125rem;">
+            Mode: <strong id="assign-prev-mode" style="color: var(--primary);">Mix Variations</strong> ·
+            Assigned: <strong id="assign-prev-count">0 contacts</strong>
+          </div>
+          <input type="text" id="assign-prev-search" class="form-input" placeholder="Search preview list..." style="max-width: 200px; padding: 0.25rem 0.5rem; font-size: 0.78rem;" oninput="app.filterAssignmentsPreview(this.value)">
+        </div>
+        <div style="max-height: 420px; overflow-y: auto;">
+          <table class="assignment-table">
+            <thead>
+              <tr>
+                <th style="width: 25%;">Recipient</th>
+                <th style="width: 25%;">Assigned Media</th>
+                <th style="width: 50%;">Assigned Message Preview</th>
+              </tr>
+            </thead>
+            <tbody id="assign-prev-tbody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-size: 0.75rem; color: var(--text-muted);">Deterministic assignment: Never reshuffles across retries</span>
+        <div style="display: flex; gap: 0.5rem;">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-preview-assignments')">Close</button>
+          <button type="button" class="btn btn-primary btn-sm" onclick="app.closeModal('modal-preview-assignments'); app.openReviewSendModal();">Proceed to Review & Send →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Review & Send Broadcast -->
+  <div class="modal-backdrop" id="modal-review-send">
+    <div class="modal-card" style="max-width: 640px;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title">Review & Send Broadcast</h3>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">Pre-flight checks and broadcast launch confirmation</div>
+        </div>
+        <button class="modal-close" onclick="app.closeModal('modal-review-send')">&times;</button>
+      </div>
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 1rem;">
+        <!-- Pre-flight Summary Card -->
+        <div style="background: var(--surface-subtle); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 1rem;">
+          <div style="font-size: 0.8125rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.65rem;">
+            Broadcast Pre-Flight Summary
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.65rem; font-size: 0.8125rem;">
+            <div>Template: <strong id="rev-tpl-name">—</strong></div>
+            <div>Mode: <strong id="rev-tpl-mode">—</strong></div>
+            <div>Eligible Recipients: <strong id="rev-cnt-eligible" style="color: #10b981;">0</strong></div>
+            <div>Excluded / Opted-out: <strong id="rev-cnt-excluded" style="color: var(--text-muted);">0</strong></div>
+            <div>Active Media Assets: <strong id="rev-cnt-media">0</strong></div>
+            <div>Active Text Variations: <strong id="rev-cnt-texts">0</strong></div>
+          </div>
+        </div>
+
+        <!-- Connection Status in Modal -->
+        <div id="rev-conn-box" style="padding: 0.75rem 1rem; border-radius: var(--radius-sm); display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--border-color); background: var(--bg-surface);">
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <span class="status-indicator" id="rev-conn-dot"></span>
+            <span id="rev-conn-text" style="font-size: 0.85rem; font-weight: 600;">Checking connection...</span>
+          </div>
+          <button type="button" class="btn btn-secondary btn-xs" id="btn-rev-reconnect" onclick="app.navigate('settings')" style="display: none;">
+            Configure Session
+          </button>
+        </div>
+
+        <!-- Anti-Spam & Validation Warnings -->
+        <div id="rev-warning-box" style="display: none; padding: 0.65rem 0.85rem; border-radius: var(--radius-sm); background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); color: #d97706; font-size: 0.8125rem;">
+          <!-- Warning text -->
+        </div>
+
+        <!-- Campaign Launch Settings -->
+        <div>
+          <div class="form-group">
+            <label class="form-label">Broadcast Campaign Name</label>
+            <input type="text" class="form-input" id="rev-campaign-name" placeholder="Campaign Name">
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+            <div class="form-group">
+              <label class="form-label">Min Delay (seconds)</label>
+              <input type="number" class="form-input" id="rev-pacing-min" value="8" min="3" max="60">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Max Delay (seconds)</label>
+              <input type="number" class="form-input" id="rev-pacing-max" value="16" min="5" max="120">
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-review-send')">Cancel</button>
+        <button type="button" class="btn btn-primary" id="btn-confirm-launch" onclick="app.submitLaunchTemplateCampaign()" style="font-weight: 700;">
+          Send Broadcast Now
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Choose Media from Library for Template -->
+  <div class="modal-backdrop" id="modal-template-media-picker">
+    <div class="modal-card" style="max-width: 680px;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title">Attach Media from Library</h3>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">Select existing media assets to include in this template</div>
+        </div>
+        <button class="modal-close" onclick="app.closeModal('modal-template-media-picker')">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 0;">
+        <div id="tpl-media-picker-list" style="max-height: 380px; overflow-y: auto; padding: 0.75rem;">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+        <span id="tpl-media-picker-selected-count" style="font-size: 0.78rem; color: var(--text-secondary);">0 selected</span>
+        <div style="display: flex; gap: 0.5rem;">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-template-media-picker')">Cancel</button>
+          <button type="button" class="btn btn-primary btn-sm" onclick="app.confirmAddMediaToTemplate()">+ Attach Selected</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Media Asset Full Preview -->
+  <div class="modal-backdrop" id="modal-media-preview">
+    <div class="modal-card" style="max-width: 720px;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title" id="media-preview-title">Media Preview</h3>
+          <div style="font-size: 0.75rem; color: var(--text-muted);" id="media-preview-meta">—</div>
+        </div>
+        <button class="modal-close" onclick="app.closeModal('modal-media-preview')">&times;</button>
+      </div>
+      <div class="modal-body" style="text-align: center; padding: 1.25rem;">
+        <div id="media-preview-content">
+          <!-- Dynamically rendered img/video/doc -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-media-preview')">Close</button>
       </div>
     </div>
   </div>

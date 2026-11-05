@@ -134,17 +134,80 @@ class DatabaseManager:
                 if "content_hash" not in media_cols:
                     cursor.execute("ALTER TABLE media_assets ADD COLUMN content_hash TEXT DEFAULT ''")
 
-                # 5. Templates
+                # 5. Templates (Unified Bulk Messaging Engine)
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS templates (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         name TEXT UNIQUE NOT NULL,
                         content TEXT NOT NULL,
                         variables_json TEXT DEFAULT '[]',
+                        description TEXT DEFAULT '',
+                        content_selection_mode TEXT DEFAULT 'mix_variations',
+                        target_group TEXT DEFAULT 'All',
+                        pacing_delay_min INTEGER DEFAULT 8,
+                        pacing_delay_max INTEGER DEFAULT 16,
+                        is_archived INTEGER DEFAULT 0,
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL
                     )
                 """)
+
+                cursor.execute("PRAGMA table_info(templates)")
+                tpl_cols = {row["name"] for row in cursor.fetchall()}
+                if "content_selection_mode" not in tpl_cols:
+                    cursor.execute("ALTER TABLE templates ADD COLUMN content_selection_mode TEXT DEFAULT 'mix_variations'")
+                if "description" not in tpl_cols:
+                    cursor.execute("ALTER TABLE templates ADD COLUMN description TEXT DEFAULT ''")
+                if "target_group" not in tpl_cols:
+                    cursor.execute("ALTER TABLE templates ADD COLUMN target_group TEXT DEFAULT 'All'")
+                if "pacing_delay_min" not in tpl_cols:
+                    cursor.execute("ALTER TABLE templates ADD COLUMN pacing_delay_min INTEGER DEFAULT 8")
+                if "pacing_delay_max" not in tpl_cols:
+                    cursor.execute("ALTER TABLE templates ADD COLUMN pacing_delay_max INTEGER DEFAULT 16")
+                if "is_archived" not in tpl_cols:
+                    cursor.execute("ALTER TABLE templates ADD COLUMN is_archived INTEGER DEFAULT 0")
+
+                # Unified Template Child Tables
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS template_media_assets (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        template_id INTEGER NOT NULL,
+                        media_asset_id INTEGER NOT NULL,
+                        is_active INTEGER DEFAULT 1,
+                        sort_order INTEGER DEFAULT 0,
+                        created_at TEXT NOT NULL,
+                        FOREIGN KEY (template_id) REFERENCES templates (id) ON DELETE CASCADE,
+                        FOREIGN KEY (media_asset_id) REFERENCES media_assets (id) ON DELETE CASCADE
+                    )
+                """)
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_tpl_media ON template_media_assets (template_id)")
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS template_text_variations (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        template_id INTEGER NOT NULL,
+                        content TEXT NOT NULL,
+                        is_active INTEGER DEFAULT 1,
+                        sort_order INTEGER DEFAULT 0,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        FOREIGN KEY (template_id) REFERENCES templates (id) ON DELETE CASCADE
+                    )
+                """)
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_tpl_text ON template_text_variations (template_id)")
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS template_contacts (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        template_id INTEGER NOT NULL,
+                        contact_id INTEGER NOT NULL,
+                        is_excluded INTEGER DEFAULT 0,
+                        created_at TEXT NOT NULL,
+                        FOREIGN KEY (template_id) REFERENCES templates (id) ON DELETE CASCADE,
+                        FOREIGN KEY (contact_id) REFERENCES contacts (id) ON DELETE CASCADE
+                    )
+                """)
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_tpl_contact ON template_contacts (template_id)")
 
                 # 6. Purpose-Driven Message Variants
                 cursor.execute("""
@@ -451,6 +514,27 @@ class DatabaseManager:
                 """, (name, phone, raw_phone, fields_json, group_name, consent_status, consent_source, customer_tier, language, now, now))
                 conn.commit()
                 return cursor.lastrowid
+
+    def get_campaign(self, campaign_id: int) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM campaigns WHERE id = ?", (campaign_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def get_campaigns(self, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM campaigns ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset))
+            return [dict(r) for r in cursor.fetchall()]
+
+    def delete_campaign(self, campaign_id: int) -> bool:
+        with _lock:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM campaigns WHERE id = ?", (campaign_id,))
+                conn.commit()
+                return cursor.rowcount > 0
 
     def bulk_add_contacts(
         self,
@@ -1032,6 +1116,27 @@ class DatabaseManager:
                 conn.commit()
                 return cursor.lastrowid
 
+    def get_campaign(self, campaign_id: int) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM campaigns WHERE id = ?", (campaign_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def get_campaigns(self, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM campaigns ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset))
+            return [dict(r) for r in cursor.fetchall()]
+
+    def delete_campaign(self, campaign_id: int) -> bool:
+        with _lock:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM campaigns WHERE id = ?", (campaign_id,))
+                conn.commit()
+                return cursor.rowcount > 0
+
     def delete_media_asset(self, asset_id: int, force: bool = False) -> Tuple[bool, str]:
         with _lock:
             with self.get_connection() as conn:
@@ -1090,6 +1195,27 @@ class DatabaseManager:
                 conn.commit()
                 return cursor.lastrowid
 
+    def get_campaign(self, campaign_id: int) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM campaigns WHERE id = ?", (campaign_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def get_campaigns(self, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM campaigns ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset))
+            return [dict(r) for r in cursor.fetchall()]
+
+    def delete_campaign(self, campaign_id: int) -> bool:
+        with _lock:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM campaigns WHERE id = ?", (campaign_id,))
+                conn.commit()
+                return cursor.rowcount > 0
+
     # --- Group Operations ---
 
     def get_groups(self) -> List[Dict[str, Any]]:
@@ -1134,22 +1260,69 @@ class DatabaseManager:
             """, (template_id,))
             return [dict(v) for v in cursor.fetchall()]
 
-    def get_templates(self) -> List[Dict[str, Any]]:
+    def get_templates(self, search: Optional[str] = None, target_group: Optional[str] = None) -> List[Dict[str, Any]]:
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM templates ORDER BY id DESC")
+            query = "SELECT * FROM templates WHERE is_archived = 0"
+            params = []
+            if search:
+                query += " AND (name LIKE ? OR description LIKE ?)"
+                params.extend([f"%{search}%", f"%{search}%"])
+            if target_group and target_group != "All":
+                query += " AND target_group = ?"
+                params.append(target_group)
+            query += " ORDER BY id DESC"
+            cursor.execute(query, params)
             templates = []
             for row in cursor.fetchall():
                 d = dict(row)
                 d["variables"] = json.loads(d.get("variables_json", "[]"))
+                tid = d["id"]
+
+                # Text variations
+                cursor.execute("""
+                    SELECT id, template_id, content, is_active, sort_order, created_at, updated_at
+                    FROM template_text_variations
+                    WHERE template_id = ?
+                    ORDER BY sort_order ASC, id ASC
+                """, (tid,))
+                texts = [dict(v) for v in cursor.fetchall()]
+                d["text_variations"] = texts
+                d["text_count"] = len(texts)
+                d["active_text_count"] = sum(1 for t in texts if t.get("is_active", 1))
+
+                # Media assets
+                cursor.execute("""
+                    SELECT tma.id as link_id, tma.is_active, tma.sort_order,
+                           m.id, m.title, m.filename, m.file_path, m.file_size, m.mime_type, m.asset_type
+                    FROM template_media_assets tma
+                    JOIN media_assets m ON tma.media_asset_id = m.id
+                    WHERE tma.template_id = ?
+                    ORDER BY tma.sort_order ASC, tma.id ASC
+                """, (tid,))
+                media = [dict(m) for m in cursor.fetchall()]
+                d["media_assets"] = media
+                d["media_count"] = len(media)
+                d["active_media_count"] = sum(1 for m in media if m.get("is_active", 1))
+
+                # Audience count
+                grp = d.get("target_group", "All")
+                if grp and grp != "All":
+                    cursor.execute("SELECT COUNT(*) as cnt FROM contacts WHERE group_name = ? AND consent_status != 'opted_out'", (grp,))
+                else:
+                    cursor.execute("SELECT COUNT(*) as cnt FROM contacts WHERE consent_status != 'opted_out'")
+                d["recipient_count"] = cursor.fetchone()["cnt"]
+
+                # Legacy backward compatibility: attach variants
                 cursor.execute("""
                     SELECT v.*, m.title as media_title, m.filename as media_filename, m.asset_type as media_type
                     FROM message_variants v
                     LEFT JOIN media_assets m ON v.media_asset_id = m.id
                     WHERE v.template_id = ?
                     ORDER BY v.id ASC
-                """, (d["id"],))
+                """, (tid,))
                 d["variants"] = [dict(v) for v in cursor.fetchall()]
+
                 templates.append(d)
             return templates
 
@@ -1162,6 +1335,61 @@ class DatabaseManager:
                 return None
             d = dict(row)
             d["variables"] = json.loads(d.get("variables_json", "[]"))
+
+            # Text variations
+            cursor.execute("""
+                SELECT id, template_id, content, is_active, sort_order, created_at, updated_at
+                FROM template_text_variations
+                WHERE template_id = ?
+                ORDER BY sort_order ASC, id ASC
+            """, (template_id,))
+            texts = [dict(v) for v in cursor.fetchall()]
+            d["text_variations"] = texts
+            d["text_count"] = len(texts)
+            d["active_text_count"] = sum(1 for t in texts if t.get("is_active", 1))
+
+            # Media assets with disk validation
+            cursor.execute("""
+                SELECT tma.id as link_id, tma.is_active, tma.sort_order,
+                       m.id, m.title, m.filename, m.file_path, m.file_size, m.mime_type, m.asset_type
+                FROM template_media_assets tma
+                JOIN media_assets m ON tma.media_asset_id = m.id
+                WHERE tma.template_id = ?
+                ORDER BY tma.sort_order ASC, tma.id ASC
+            """, (template_id,))
+            media = []
+            for m_row in cursor.fetchall():
+                m_dict = dict(m_row)
+                m_dict["exists_on_disk"] = os.path.exists(m_dict.get("file_path", ""))
+                media.append(m_dict)
+            d["media_assets"] = media
+            d["media_count"] = len(media)
+            d["active_media_count"] = sum(1 for m in media if m.get("is_active", 1))
+
+            # Contacts summary
+            grp = d.get("target_group", "All")
+            if grp and grp != "All":
+                cursor.execute("SELECT COUNT(*) as cnt FROM contacts WHERE group_name = ?", (grp,))
+                tot = cursor.fetchone()["cnt"]
+                cursor.execute("SELECT COUNT(*) as cnt FROM contacts WHERE group_name = ? AND consent_status != 'opted_out'", (grp,))
+                elig = cursor.fetchone()["cnt"]
+            else:
+                cursor.execute("SELECT COUNT(*) as cnt FROM contacts")
+                tot = cursor.fetchone()["cnt"]
+                cursor.execute("SELECT COUNT(*) as cnt FROM contacts WHERE consent_status != 'opted_out'")
+                elig = cursor.fetchone()["cnt"]
+
+            cursor.execute("SELECT contact_id FROM template_contacts WHERE template_id = ? AND is_excluded = 1", (template_id,))
+            excl_ids = [r["contact_id"] for r in cursor.fetchall()]
+            d["excluded_contact_ids"] = excl_ids
+
+            d["contacts_summary"] = {
+                "total_selected": tot,
+                "eligible": max(0, elig - len(excl_ids)),
+                "excluded": (tot - elig) + len(excl_ids)
+            }
+
+            # Legacy backward compatibility: attach variants
             cursor.execute("""
                 SELECT v.*, m.title as media_title, m.filename as media_filename, m.file_path as media_path, m.asset_type as media_type
                 FROM message_variants v
@@ -1172,18 +1400,26 @@ class DatabaseManager:
             d["variants"] = [dict(v) for v in cursor.fetchall()]
             return d
 
-    def add_template(self, name: str, content: str, variables: Optional[List[str]] = None) -> int:
+    def add_template(self, name: str, content: str, variables: Optional[List[str]] = None, description: str = "", content_selection_mode: str = "mix_variations", target_group: str = "All") -> int:
         with _lock:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 now = datetime.now().isoformat()
                 vars_json = json.dumps(variables or [])
                 cursor.execute("""
-                    INSERT INTO templates (name, content, variables_json, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (name, content, vars_json, now, now))
+                    INSERT INTO templates (name, content, variables_json, description, content_selection_mode, target_group, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (name, content, vars_json, description, content_selection_mode, target_group, now, now))
                 tid = cursor.lastrowid
-                # Automatically create default variant
+
+                # Create initial text variation
+                if content and content.strip():
+                    cursor.execute("""
+                        INSERT INTO template_text_variations (template_id, content, is_active, sort_order, created_at, updated_at)
+                        VALUES (?, ?, 1, 0, ?, ?)
+                    """, (tid, content, now, now))
+
+                # Automatically create default variant for legacy compatibility
                 cursor.execute("""
                     INSERT INTO message_variants (template_id, variant_name, purpose, audience_filter_field, audience_filter_value, content, approval_status, created_at, updated_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1191,28 +1427,336 @@ class DatabaseManager:
                 conn.commit()
                 return tid
 
-    def update_template(self, template_id: int, name: str, content: str, variables: Optional[List[str]] = None) -> bool:
+    def update_template(
+        self,
+        template_id: int,
+        name: Optional[str] = None,
+        content: Optional[str] = None,
+        variables: Optional[List[str]] = None,
+        description: Optional[str] = None,
+        content_selection_mode: Optional[str] = None,
+        target_group: Optional[str] = None,
+        pacing_delay_min: Optional[int] = None,
+        pacing_delay_max: Optional[int] = None
+    ) -> bool:
         with _lock:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 now = datetime.now().isoformat()
-                vars_json = json.dumps(variables or [])
-                cursor.execute("""
-                    UPDATE templates
-                    SET name = ?, content = ?, variables_json = ?, updated_at = ?
-                    WHERE id = ?
-                """, (name, content, vars_json, now, template_id))
+                fields = ["updated_at = ?"]
+                params = [now]
+                if name is not None:
+                    fields.append("name = ?")
+                    params.append(name)
+                if content is not None:
+                    fields.append("content = ?")
+                    params.append(content)
+                if variables is not None:
+                    fields.append("variables_json = ?")
+                    params.append(json.dumps(variables))
+                if description is not None:
+                    fields.append("description = ?")
+                    params.append(description)
+                if content_selection_mode is not None:
+                    fields.append("content_selection_mode = ?")
+                    params.append(content_selection_mode)
+                if target_group is not None:
+                    fields.append("target_group = ?")
+                    params.append(target_group)
+                if pacing_delay_min is not None:
+                    fields.append("pacing_delay_min = ?")
+                    params.append(pacing_delay_min)
+                if pacing_delay_max is not None:
+                    fields.append("pacing_delay_max = ?")
+                    params.append(pacing_delay_max)
+
+                params.append(template_id)
+                query = f"UPDATE templates SET {', '.join(fields)} WHERE id = ?"
+                cursor.execute(query, params)
                 conn.commit()
                 return cursor.rowcount > 0
 
     def delete_template(self, template_id: int) -> bool:
+        """
+        Permanently deletes a template.
+        Safely unlinks associated campaigns and legacy collections so historical records are preserved.
+        """
         with _lock:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
+                # 1. Preserve historical campaign dispatch records by unlinking foreign key
+                cursor.execute("UPDATE campaigns SET template_id = NULL WHERE template_id = ?", (template_id,))
+                cursor.execute("UPDATE collection_items SET template_id = NULL WHERE template_id = ?", (template_id,))
+                cursor.execute("UPDATE content_set_items SET template_id = NULL WHERE template_id = ?", (template_id,))
+
+                # 2. Delete child template associations
+                cursor.execute("DELETE FROM template_media_assets WHERE template_id = ?", (template_id,))
+                cursor.execute("DELETE FROM template_text_variations WHERE template_id = ?", (template_id,))
+                cursor.execute("DELETE FROM template_contacts WHERE template_id = ?", (template_id,))
                 cursor.execute("DELETE FROM message_variants WHERE template_id = ?", (template_id,))
+
+                # 3. Delete the template itself
                 cursor.execute("DELETE FROM templates WHERE id = ?", (template_id,))
                 conn.commit()
                 return cursor.rowcount > 0
+
+    def duplicate_template(self, template_id: int) -> Optional[Dict[str, Any]]:
+        """Clones a template with all its media assets and text variations."""
+        with _lock:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM templates WHERE id = ?", (template_id,))
+                row = cursor.fetchone()
+                if not row:
+                    return None
+                orig = dict(row)
+                now = datetime.now().isoformat()
+                new_name = f"{orig['name']} (Copy)"
+
+                cursor.execute("SELECT id FROM templates WHERE name = ?", (new_name,))
+                if cursor.fetchone():
+                    new_name = f"{orig['name']} (Copy {int(time.time()) % 10000})"
+
+                cursor.execute("""
+                    INSERT INTO templates (name, content, variables_json, description, content_selection_mode, target_group, pacing_delay_min, pacing_delay_max, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    new_name,
+                    orig.get("content", ""),
+                    orig.get("variables_json", "[]"),
+                    orig.get("description", ""),
+                    orig.get("content_selection_mode", "mix_variations"),
+                    orig.get("target_group", "All"),
+                    orig.get("pacing_delay_min", 8),
+                    orig.get("pacing_delay_max", 16),
+                    now, now
+                ))
+                new_tid = cursor.lastrowid
+
+                # Copy text variations
+                cursor.execute("""
+                    SELECT content, is_active, sort_order
+                    FROM template_text_variations
+                    WHERE template_id = ?
+                    ORDER BY sort_order ASC
+                """, (template_id,))
+                for tv in cursor.fetchall():
+                    cursor.execute("""
+                        INSERT INTO template_text_variations (template_id, content, is_active, sort_order, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (new_tid, tv["content"], tv["is_active"], tv["sort_order"], now, now))
+
+                # Copy media assets
+                cursor.execute("""
+                    SELECT media_asset_id, is_active, sort_order
+                    FROM template_media_assets
+                    WHERE template_id = ?
+                    ORDER BY sort_order ASC
+                """, (template_id,))
+                for ma in cursor.fetchall():
+                    cursor.execute("""
+                        INSERT INTO template_media_assets (template_id, media_asset_id, is_active, sort_order, created_at)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (new_tid, ma["media_asset_id"], ma["is_active"], ma["sort_order"], now))
+
+                conn.commit()
+                return self.get_template(new_tid)
+
+    def add_template_text_variation(self, template_id: int, content: str) -> int:
+        with _lock:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                now = datetime.now().isoformat()
+                cursor.execute("SELECT MAX(sort_order) as m FROM template_text_variations WHERE template_id = ?", (template_id,))
+                row = cursor.fetchone()
+                order = (row["m"] or 0) + 1 if row else 0
+                cursor.execute("""
+                    INSERT INTO template_text_variations (template_id, content, is_active, sort_order, created_at, updated_at)
+                    VALUES (?, ?, 1, ?, ?, ?)
+                """, (template_id, content, order, now, now))
+                vid = cursor.lastrowid
+                conn.commit()
+                return vid
+
+    def update_template_text_variation(self, variant_id: int, content: Optional[str] = None, is_active: Optional[int] = None) -> bool:
+        with _lock:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                now = datetime.now().isoformat()
+                fields = ["updated_at = ?"]
+                params = [now]
+                if content is not None:
+                    fields.append("content = ?")
+                    params.append(content)
+                if is_active is not None:
+                    fields.append("is_active = ?")
+                    params.append(1 if is_active else 0)
+                params.append(variant_id)
+                cursor.execute(f"UPDATE template_text_variations SET {', '.join(fields)} WHERE id = ?", params)
+                conn.commit()
+                return cursor.rowcount > 0
+
+    def delete_template_text_variation(self, variant_id: int) -> bool:
+        with _lock:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM template_text_variations WHERE id = ?", (variant_id,))
+                conn.commit()
+                return cursor.rowcount > 0
+
+    def add_template_media_assets(self, template_id: int, media_asset_ids: List[int]) -> int:
+        with _lock:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                now = datetime.now().isoformat()
+                added = 0
+                for mid in media_asset_ids:
+                    cursor.execute("SELECT id FROM template_media_assets WHERE template_id = ? AND media_asset_id = ?", (template_id, mid))
+                    if not cursor.fetchone():
+                        cursor.execute("""
+                            INSERT INTO template_media_assets (template_id, media_asset_id, is_active, sort_order, created_at)
+                            VALUES (?, ?, 1, 0, ?)
+                        """, (template_id, mid, now))
+                        added += 1
+                conn.commit()
+                return added
+
+    def remove_template_media_asset(self, template_id: int, media_asset_id: int) -> bool:
+        with _lock:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM template_media_assets WHERE template_id = ? AND media_asset_id = ?", (template_id, media_asset_id))
+                conn.commit()
+                return cursor.rowcount > 0
+
+    def toggle_template_media_asset(self, template_id: int, media_asset_id: int, is_active: bool) -> bool:
+        with _lock:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE template_media_assets
+                    SET is_active = ?
+                    WHERE template_id = ? AND media_asset_id = ?
+                """, (1 if is_active else 0, template_id, media_asset_id))
+                conn.commit()
+                return cursor.rowcount > 0
+
+    def compute_template_assignments(self, template_id: int, preview_limit: int = 50) -> Dict[str, Any]:
+        """
+        Computes 1 media asset + 1 text variation per eligible contact.
+        - Mode 1: same_for_everyone -> user picks 1 media + 1 text for all.
+        - Mode 2: mix_variations -> reproducible seeded random assignment per contact.
+        """
+        import random
+        tpl = self.get_template(template_id)
+        if not tpl:
+            raise ValueError(f"Template {template_id} not found.")
+
+        grp = tpl.get("target_group", "All")
+        contacts = self.get_contacts(group_name=grp if grp != "All" else None, limit=5000)
+
+        excluded_ids = set(tpl.get("excluded_contact_ids", []))
+        eligible_contacts = []
+        excluded_contacts = []
+        for c in contacts:
+            if c.get("consent_status") == "opted_out" or c["id"] in excluded_ids:
+                excluded_contacts.append(c)
+            else:
+                eligible_contacts.append(c)
+
+        active_texts = [t for t in tpl.get("text_variations", []) if t.get("is_active", 1)]
+        active_media = [m for m in tpl.get("media_assets", []) if m.get("is_active", 1)]
+
+        mode = tpl.get("content_selection_mode", "mix_variations")
+        rng = random.Random(template_id + 42)
+
+        assignments = []
+        for c in eligible_contacts:
+            contact_name = c.get("name", "Friend")
+            first_name = contact_name.split()[0] if contact_name else "Friend"
+            phone = c.get("phone", "")
+
+            # Resolve text
+            if not active_texts:
+                resolved_text = tpl.get("content", "")
+                text_id = None
+            elif mode == "same_for_everyone":
+                text_obj = active_texts[0]
+                resolved_text = text_obj["content"]
+                text_id = text_obj["id"]
+            else:
+                text_obj = rng.choice(active_texts)
+                resolved_text = text_obj["content"]
+                text_id = text_obj["id"]
+
+            rendered = (resolved_text
+                        .replace("{name}", contact_name)
+                        .replace("{first_name}", first_name)
+                        .replace("{phone}", phone))
+
+            # Resolve media
+            if not active_media:
+                media_id = None
+                media_title = "None (Text Only)"
+                media_file = ""
+            elif mode == "same_for_everyone":
+                media_obj = active_media[0]
+                media_id = media_obj["id"]
+                media_title = media_obj.get("title") or media_obj.get("filename", "")
+                media_file = media_obj.get("filename", "")
+            else:
+                media_obj = rng.choice(active_media)
+                media_id = media_obj["id"]
+                media_title = media_obj.get("title") or media_obj.get("filename", "")
+                media_file = media_obj.get("filename", "")
+
+            assignments.append({
+                "contact_id": c["id"],
+                "contact_name": contact_name,
+                "phone": phone,
+                "text_id": text_id,
+                "rendered_text": rendered,
+                "media_asset_id": media_id,
+                "media_title": media_title,
+                "media_file": media_file
+            })
+
+        return {
+            "template_id": template_id,
+            "template_name": tpl.get("name", ""),
+            "mode": mode,
+            "total_selected": len(contacts),
+            "eligible_count": len(eligible_contacts),
+            "excluded_count": len(excluded_contacts),
+            "active_media_count": len(active_media),
+            "active_text_count": len(active_texts),
+            "preview_assignments": assignments[:preview_limit],
+            "all_assignments": assignments
+        }
+
+    def bulk_delete_media_assets(self, asset_ids: List[int]) -> Dict[str, Any]:
+        """Bulk deletes media assets from SQLite and removes physical files from uploads/media."""
+        with _lock:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                deleted_count = 0
+                for aid in asset_ids:
+                    cursor.execute("SELECT file_path FROM media_assets WHERE id = ?", (aid,))
+                    row = cursor.fetchone()
+                    if row and row["file_path"] and os.path.exists(row["file_path"]):
+                        try:
+                            os.remove(row["file_path"])
+                        except Exception:
+                            pass
+                    cursor.execute("DELETE FROM template_media_assets WHERE media_asset_id = ?", (aid,))
+                    cursor.execute("DELETE FROM content_set_items WHERE media_asset_id = ?", (aid,))
+                    cursor.execute("DELETE FROM collection_items WHERE media_asset_id = ?", (aid,))
+                    cursor.execute("UPDATE message_variants SET media_asset_id = NULL WHERE media_asset_id = ?", (aid,))
+                    cursor.execute("UPDATE campaigns SET media_asset_id = NULL WHERE media_asset_id = ?", (aid,))
+                    cursor.execute("DELETE FROM media_assets WHERE id = ?", (aid,))
+                    deleted_count += cursor.rowcount
+                conn.commit()
+                return {"success": True, "deleted_count": deleted_count}
 
     def add_message_variant(
         self,
@@ -1235,6 +1779,27 @@ class DatabaseManager:
                 """, (template_id, variant_name, purpose, audience_filter_field, audience_filter_value, content, media_asset_id, approval_status, now, now))
                 conn.commit()
                 return cursor.lastrowid
+
+    def get_campaign(self, campaign_id: int) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM campaigns WHERE id = ?", (campaign_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def get_campaigns(self, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM campaigns ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset))
+            return [dict(r) for r in cursor.fetchall()]
+
+    def delete_campaign(self, campaign_id: int) -> bool:
+        with _lock:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM campaigns WHERE id = ?", (campaign_id,))
+                conn.commit()
+                return cursor.rowcount > 0
 
     def update_message_variant(
         self,

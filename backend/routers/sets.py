@@ -140,6 +140,7 @@ def add_new_message_to_set(set_id: int, payload: NewMessageInSetRequest):
     )
 
 
+@router.delete("/{set_id}/items")
 @router.post("/{set_id}/items/remove")
 def remove_items_from_set(set_id: int, payload: SetItemsBulkActionRequest):
     """Removes selected items from a content set."""

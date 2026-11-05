@@ -23,6 +23,7 @@ check_contacts_live.png
 config.json
 whatsapp_report_*.csv
 Customer bulk email data.xlsx
+uploads/
 
 # Auto-Updater Temporary Files & Backups
 .update_backup/

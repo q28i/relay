@@ -124,16 +124,19 @@ def get_template(template_id: int):
 @router.post("")
 def create_template(payload: TemplateCreate):
     """Creates a new message template with auto-extracted variables."""
-    variables = _extract_variables(payload.content)
+    content = payload.content or "Hello {first_name}, "
+    variables = _extract_variables(content)
     try:
-        tid = db.add_template(name=payload.name, content=payload.content, variables=variables)
+        tid = db.add_template(
+            name=payload.name,
+            content=content,
+            variables=variables,
+            description=payload.description or "",
+            content_selection_mode=payload.content_selection_mode or "mix_variations",
+            target_group=payload.target_group or "All"
+        )
         db.log_event("INFO", "Templates", f"Created template '{payload.name}' (Variables: {variables})")
-        return {
-            "id": tid,
-            "name": payload.name,
-            "content": payload.content,
-            "variables": variables
-        }
+        return db.get_template(tid)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to create template: {e}")
 
@@ -141,17 +144,22 @@ def create_template(payload: TemplateCreate):
 @router.put("/{template_id}")
 def update_template(template_id: int, payload: TemplateUpdate):
     """Updates an existing message template."""
-    variables = _extract_variables(payload.content)
-    success = db.update_template(template_id=template_id, name=payload.name, content=payload.content, variables=variables)
+    variables = _extract_variables(payload.content) if payload.content else None
+    success = db.update_template(
+        template_id=template_id,
+        name=payload.name,
+        content=payload.content,
+        variables=variables,
+        description=payload.description,
+        content_selection_mode=payload.content_selection_mode,
+        target_group=payload.target_group,
+        pacing_delay_min=payload.pacing_delay_min,
+        pacing_delay_max=payload.pacing_delay_max
+    )
     if not success:
         raise HTTPException(status_code=404, detail="Template not found")
-    db.log_event("INFO", "Templates", f"Updated template #{template_id} '{payload.name}'")
-    return {
-        "id": template_id,
-        "name": payload.name,
-        "content": payload.content,
-        "variables": variables
-    }
+    db.log_event("INFO", "Templates", f"Updated template #{template_id}")
+    return db.get_template(template_id)
 
 
 @router.delete("/{template_id}")
@@ -388,4 +396,259 @@ def preview_resolve_variant(payload: PreviewResolveRequest):
         fallback_content=payload.fallback_content or ""
     )
     return PreviewResolveResponse(**result)
+
+
+# ==============================================================================
+# UNIFIED TEMPLATE WORKSPACE API
+# ==============================================================================
+
+class AddMediaToTemplateRequest(BaseModel):
+    media_asset_ids: Optional[List[int]] = None
+    asset_ids: Optional[List[int]] = None
+
+
+class ToggleMediaInTemplateRequest(BaseModel):
+    is_active: bool
+
+
+class AddTextVariationRequest(BaseModel):
+    content: Optional[str] = None
+    text_content: Optional[str] = None
+
+
+class UpdateTextVariationRequest(BaseModel):
+    content: Optional[str] = None
+    text_content: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class PasteMultipleTextsRequest(BaseModel):
+    raw_text: str
+    separator: Optional[str] = "\n"
+
+
+class ImportTemplateRequest(BaseModel):
+    name: str
+    description: Optional[str] = ""
+    content_selection_mode: Optional[str] = "mix_variations"
+    target_group: Optional[str] = "All"
+    text_variations: Optional[List[str]] = []
+    media_asset_ids: Optional[List[int]] = []
+
+
+class LaunchTemplateCampaignRequest(BaseModel):
+    campaign_name: Optional[str] = None
+    target_group: Optional[str] = "All"
+    pacing_delay_min: Optional[int] = 8
+    pacing_delay_max: Optional[int] = 16
+
+
+@router.post("/{template_id}/duplicate")
+def duplicate_template(template_id: int):
+    """Clones a template with all its media assets and text variations."""
+    dup = db.duplicate_template(template_id)
+    if not dup:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return {"success": True, "template": dup}
+
+
+@router.get("/{template_id}/export")
+def export_template(template_id: int):
+    """Exports a template configuration, text variations, and media metadata into portable JSON."""
+    t = db.get_template(template_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    export_data = {
+        "format": "relay_template_v1",
+        "name": t["name"],
+        "description": t.get("description", ""),
+        "content_selection_mode": t.get("content_selection_mode", "mix_variations"),
+        "target_group": t.get("target_group", "All"),
+        "pacing_delay_min": t.get("pacing_delay_min", 8),
+        "pacing_delay_max": t.get("pacing_delay_max", 16),
+        "text_variations": [tv["content"] for tv in t.get("text_variations", [])],
+        "media_assets": [
+            {
+                "title": m.get("title", ""),
+                "filename": m.get("filename", ""),
+                "mime_type": m.get("mime_type", ""),
+                "file_size": m.get("file_size", 0)
+            }
+            for m in t.get("media_assets", [])
+        ]
+    }
+    return export_data
+
+
+@router.post("/import")
+def import_template(payload: ImportTemplateRequest):
+    """Imports a template and registers its text variations and media associations."""
+    tid = db.add_template(
+        name=payload.name,
+        content=payload.text_variations[0] if payload.text_variations else "",
+        description=payload.description or "",
+        content_selection_mode=payload.content_selection_mode or "mix_variations",
+        target_group=payload.target_group or "All"
+    )
+
+    if payload.text_variations:
+        for idx, text in enumerate(payload.text_variations):
+            if idx == 0:
+                continue  # already added as primary in add_template
+            db.add_template_text_variation(tid, text)
+
+    if payload.media_asset_ids:
+        db.add_template_media_assets(tid, payload.media_asset_ids)
+
+    return {"success": True, "template": db.get_template(tid)}
+
+
+@router.post("/{template_id}/media")
+def add_media_to_template(template_id: int, payload: AddMediaToTemplateRequest):
+    """Associates existing library media assets with a template."""
+    t = db.get_template(template_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Template not found")
+    ids = payload.media_asset_ids or payload.asset_ids or []
+    added = db.add_template_media_assets(template_id, ids)
+    return {"success": True, "added_count": added, "template": db.get_template(template_id)}
+
+
+@router.delete("/{template_id}/media/{media_asset_id}")
+def remove_media_from_template(template_id: int, media_asset_id: int):
+    """Removes a media asset from a template without deleting it from the media library."""
+    success = db.remove_template_media_asset(template_id, media_asset_id)
+    return {"success": success, "template": db.get_template(template_id)}
+
+
+@router.put("/{template_id}/media/{media_asset_id}/toggle")
+def toggle_media_in_template(template_id: int, media_asset_id: int, payload: ToggleMediaInTemplateRequest):
+    """Toggles active/excluded status of a media asset in this template."""
+    success = db.toggle_template_media_asset(template_id, media_asset_id, payload.is_active)
+    return {"success": success, "template": db.get_template(template_id)}
+
+
+@router.post("/{template_id}/texts")
+def add_text_to_template(template_id: int, payload: AddTextVariationRequest):
+    """Adds a new text variation directly into a template."""
+    t = db.get_template(template_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Template not found")
+    raw_content = payload.content or payload.text_content or "Hello {first_name}, "
+    vid = db.add_template_text_variation(template_id, raw_content)
+    return {"success": True, "variant_id": vid, "template": db.get_template(template_id)}
+
+
+@router.put("/{template_id}/texts/{variant_id}")
+def update_text_variation(template_id: int, variant_id: int, payload: UpdateTextVariationRequest):
+    """Updates the content or active state of a text variation."""
+    raw_content = payload.content if payload.content is not None else payload.text_content
+    success = db.update_template_text_variation(variant_id, content=raw_content, is_active=payload.is_active)
+    if not success:
+        raise HTTPException(status_code=404, detail="Text variation not found")
+    return {"success": True, "template": db.get_template(template_id)}
+
+
+@router.delete("/{template_id}/texts/{variant_id}")
+def delete_text_variation(template_id: int, variant_id: int):
+    """Permanently deletes a text variation from a template."""
+    success = db.delete_template_text_variation(variant_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Text variation not found")
+    return {"success": True, "deleted_id": variant_id, "template": db.get_template(template_id)}
+
+
+@router.put("/{template_id}/texts/{variant_id}/toggle")
+def toggle_text_variation(template_id: int, variant_id: int, payload: ToggleMediaInTemplateRequest):
+    """Toggles active/excluded state of a text variation."""
+    success = db.update_template_text_variation(variant_id, is_active=payload.is_active)
+    return {"success": success, "template": db.get_template(template_id)}
+
+
+@router.post("/{template_id}/texts/paste-multiple")
+def paste_multiple_text_variations(template_id: int, payload: PasteMultipleTextsRequest):
+    """Splits raw pasted text by separator (default newline) and adds each non-empty entry as a text variation."""
+    t = db.get_template(template_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    sep = payload.separator or "\n"
+    lines = [l.strip() for l in payload.raw_text.split(sep) if l.strip()]
+    if not lines:
+        raise HTTPException(status_code=400, detail="No non-empty text lines found in input")
+
+    added = 0
+    for line in lines:
+        db.add_template_text_variation(template_id, line)
+        added += 1
+
+    return {"success": True, "added_count": added, "template": db.get_template(template_id)}
+
+
+@router.post("/{template_id}/preview-assignments")
+def preview_template_assignments(template_id: int):
+    """
+    Computes 1-media + 1-text assignment for all eligible recipients.
+    Returns preview summary with sample recipient table.
+    """
+    t = db.get_template(template_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Template not found")
+    assignments = db.compute_template_assignments(template_id, preview_limit=50)
+    return assignments
+
+
+@router.post("/{template_id}/launch")
+def launch_template_campaign(template_id: int, payload: LaunchTemplateCampaignRequest):
+    """
+    Reviews assignments and launches an active messaging campaign directly from a template.
+    Generates durable queue items with pre-computed 1-media + 1-text assignments.
+    """
+    from datetime import datetime
+    from backend.job_queue import job_worker
+
+    tpl = db.get_template(template_id)
+    if not tpl:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    assignments_data = db.compute_template_assignments(template_id, preview_limit=5000)
+    assignments = assignments_data.get("all_assignments", [])
+    if not assignments:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot launch campaign: No eligible contacts found in selected audience."
+        )
+
+    active_texts = [t for t in tpl.get("text_variations", []) if t.get("is_active", 1)]
+    if not active_texts and not tpl.get("content"):
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot launch campaign: Please add at least one active message variation."
+        )
+
+    target_grp = payload.target_group or tpl.get("target_group", "All")
+    camp_name = payload.campaign_name or f"{tpl['name']} ({datetime.now().strftime('%b %d, %H:%M')})"
+
+    contacts = db.get_contacts(group_name=target_grp if target_grp != "All" else None, limit=5000)
+    eligible_contacts = [c for c in contacts if c.get("consent_status") != "opted_out"]
+
+    # Start campaign in background job worker
+    res = job_worker.start_campaign_job(
+        campaign_name=camp_name,
+        contacts=eligible_contacts,
+        template_content=active_texts[0]["content"] if active_texts else (tpl.get("content") or ""),
+        min_delay=float(payload.pacing_delay_min or tpl.get("pacing_delay_min", 8)),
+        max_delay=float(payload.pacing_delay_max or tpl.get("pacing_delay_max", 16)),
+        allocation_method=tpl.get("content_selection_mode", "mix_variations"),
+        template_id=template_id
+    )
+
+    return {
+        "success": True,
+        "campaign_name": camp_name,
+        "job": res,
+        "eligible_count": len(eligible_contacts),
+        "mode": tpl.get("content_selection_mode", "mix_variations")
+    }
 
