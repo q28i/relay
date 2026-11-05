@@ -540,6 +540,11 @@ class WhatsAppDashboardApp {
       this.loadDashboardData();
     } else if (msg.type === 'job_progress') {
       this.updateJobProgress(msg);
+    } else if (msg.type === 'job_stage_update') {
+      const actEl = document.getElementById('prog-current-activity');
+      if (actEl) {
+        actEl.textContent = `[${msg.recipient_index}/${msg.total_recipients}] ${msg.recipient_name} (+${msg.masked_phone}): ${msg.stage}`;
+      }
     } else if (msg.type === 'job_finished') {
       this.showToast(`Campaign '${this.activeJob ? this.activeJob.campaign_name : ''}' finished`, 'success');
       this.updateActiveJobBanner(null);
@@ -940,6 +945,25 @@ class WhatsAppDashboardApp {
 
     const fill = document.getElementById('banner-progress-fill');
     if (fill) fill.style.width = `${msg.percentage}%`;
+
+    const sentEl = document.getElementById('prog-cnt-sent');
+    if (sentEl && msg.sent !== undefined) sentEl.textContent = msg.sent;
+    const failedEl = document.getElementById('prog-cnt-failed');
+    if (failedEl && msg.failed !== undefined) failedEl.textContent = msg.failed;
+    const partialEl = document.getElementById('prog-cnt-partial');
+    if (partialEl && msg.partial !== undefined) partialEl.textContent = msg.partial;
+    const pendingEl = document.getElementById('prog-cnt-pending');
+    if (pendingEl && msg.total !== undefined) {
+      pendingEl.textContent = Math.max(0, msg.total - ((msg.sent || 0) + (msg.failed || 0) + (msg.partial || 0)));
+    }
+    const labelEl = document.getElementById('prog-progress-text');
+    if (labelEl && msg.current !== undefined) {
+      labelEl.textContent = `${msg.current} / ${msg.total} processed (${msg.percentage}%)`;
+    }
+    const barEl = document.getElementById('prog-progress-bar');
+    if (barEl && msg.percentage !== undefined) {
+      barEl.style.transform = `scaleX(${msg.percentage / 100})`;
+    }
   }
 
   async toggleActiveJobPause() {
@@ -8266,6 +8290,7 @@ class WhatsAppDashboardApp {
     const barEl = document.getElementById('prog-progress-bar');
     const sentEl = document.getElementById('prog-cnt-sent');
     const pendingEl = document.getElementById('prog-cnt-pending');
+    const partialEl = document.getElementById('prog-cnt-partial');
     const failedEl = document.getElementById('prog-cnt-failed');
     const uncertainEl = document.getElementById('prog-cnt-uncertain');
     const activityEl = document.getElementById('prog-current-activity');
@@ -8278,13 +8303,15 @@ class WhatsAppDashboardApp {
     const total = job.total_count || job.total || 0;
     const sent = job.sent_count || job.sent || 0;
     const failed = job.failed_count || job.failed || 0;
+    const partial = job.partial_count || job.partially_sent || 0;
     const uncertain = job.uncertain_count || job.uncertain || 0;
-    const pending = (job.pending_count !== undefined) ? job.pending_count : Math.max(0, total - (sent + failed + uncertain));
-    const processed = sent + failed + uncertain;
+    const pending = (job.pending_count !== undefined) ? job.pending_count : Math.max(0, total - (sent + failed + partial + uncertain));
+    const processed = sent + failed + partial + uncertain;
     const pct = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
 
     if (sentEl) sentEl.textContent = sent;
     if (pendingEl) pendingEl.textContent = pending;
+    if (partialEl) partialEl.textContent = partial;
     if (failedEl) failedEl.textContent = failed;
     if (uncertainEl) uncertainEl.textContent = uncertain;
 

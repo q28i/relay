@@ -737,8 +737,8 @@
             </div>
           </div>
 
-          <!-- 4 Big Metric Counters: Sent, Pending, Failed, Uncertain -->
-          <div class="progress-stat-grid">
+          <!-- 5 Big Metric Counters: Sent, Pending, Partial, Failed, Uncertain -->
+          <div class="progress-stat-grid" style="grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));">
             <div class="progress-stat-card sent">
               <span class="progress-stat-number" id="prog-cnt-sent">0</span>
               <span class="progress-stat-label">🟢 Sent</span>
@@ -746,6 +746,10 @@
             <div class="progress-stat-card pending">
               <span class="progress-stat-number" id="prog-cnt-pending">0</span>
               <span class="progress-stat-label">⏳ Pending</span>
+            </div>
+            <div class="progress-stat-card partial" style="border-left: 3px solid #f59e0b;">
+              <span class="progress-stat-number" id="prog-cnt-partial">0</span>
+              <span class="progress-stat-label">🟠 Partial</span>
             </div>
             <div class="progress-stat-card failed">
               <span class="progress-stat-number" id="prog-cnt-failed">0</span>

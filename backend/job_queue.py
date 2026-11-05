@@ -506,32 +506,43 @@ class BackgroundJobWorker:
                     try:
                         from backend.connection_monitor import connection_monitor
                         if not connection_monitor.is_connected():
-                            log_event(f"Connection lost mid-campaign at recipient {idx}/{total_items}. Pausing campaign safely without marking unsent as sent.", "WARNING")
-                            with self._lock:
-                                if self._active_job and self._active_job.get("id") == job_id:
-                                    self._active_job["status"] = "WAITING_FOR_CONNECTION"
-                            db.update_job_status(job_id, "WAITING_FOR_CONNECTION")
-                            self._broadcast({
-                                "type": "job_waiting_for_connection",
-                                "job_id": job_id,
-                                "status": "WAITING_FOR_CONNECTION"
-                            })
-                            while not self._is_stopped and not self._is_paused:
-                                time.sleep(1.0)
-                                if connection_monitor.is_connected():
-                                    log_event(f"Connection restored! Continuing campaign {job_id} at recipient {idx}/{total_items}.", "INFO")
-                                    with self._lock:
-                                        if self._active_job and self._active_job.get("id") == job_id:
-                                            self._active_job["status"] = "RUNNING"
-                                    db.update_job_status(job_id, "RUNNING")
-                                    self._broadcast({
-                                        "type": "job_resumed",
-                                        "job_id": job_id,
-                                        "status": "RUNNING"
-                                    })
+                            # Check if the browser driver is still open and alive on web.whatsapp.com
+                            mon_driver = connection_monitor.get_driver()
+                            driver_alive = False
+                            if mon_driver is not None:
+                                try:
+                                    if len(mon_driver.window_handles) > 0 and "web.whatsapp.com" in (mon_driver.current_url or ""):
+                                        driver_alive = True
+                                except Exception:
+                                    pass
+
+                            if not driver_alive:
+                                log_event(f"Connection lost mid-campaign at recipient {idx}/{total_items}. Pausing campaign safely without marking unsent as sent.", "WARNING")
+                                with self._lock:
+                                    if self._active_job and self._active_job.get("id") == job_id:
+                                        self._active_job["status"] = "WAITING_FOR_CONNECTION"
+                                db.update_job_status(job_id, "WAITING_FOR_CONNECTION")
+                                self._broadcast({
+                                    "type": "job_waiting_for_connection",
+                                    "job_id": job_id,
+                                    "status": "WAITING_FOR_CONNECTION"
+                                })
+                                while not self._is_stopped and not self._is_paused:
+                                    time.sleep(1.0)
+                                    if connection_monitor.is_connected():
+                                        log_event(f"Connection restored! Continuing campaign {job_id} at recipient {idx}/{total_items}.", "INFO")
+                                        with self._lock:
+                                            if self._active_job and self._active_job.get("id") == job_id:
+                                                self._active_job["status"] = "RUNNING"
+                                        db.update_job_status(job_id, "RUNNING")
+                                        self._broadcast({
+                                            "type": "job_resumed",
+                                            "job_id": job_id,
+                                            "status": "RUNNING"
+                                        })
+                                        break
+                                if self._is_stopped or self._is_paused:
                                     break
-                            if self._is_stopped or self._is_paused:
-                                break
                     except Exception as ex:
                         logger.debug(f"Connection check error: {ex}")
 
@@ -575,6 +586,25 @@ class BackgroundJobWorker:
                     if self._active_job and self._active_job.get("id") == job_id:
                         self._active_job["current_recipient"] = f"{recipient_name} (+{masked})"
 
+                # Clean up any leftover preview before recipient dispatch
+                try:
+                    if hasattr(provider, "_engine") and provider._engine and hasattr(provider._engine, "_dismiss_media_preview"):
+                        provider._engine._dismiss_media_preview()
+                except Exception:
+                    pass
+
+                def recipient_stage_callback(stage_name: str):
+                    self._broadcast({
+                        "type": "job_stage_update",
+                        "job_id": job_id,
+                        "recipient_index": idx,
+                        "total_recipients": total_items,
+                        "recipient_name": recipient_name,
+                        "recipient_phone": recipient_phone,
+                        "masked_phone": masked,
+                        "stage": stage_name
+                    })
+
                 # Check if item is already partially sent (e.g. text-only retry)
                 is_text_only_retry = (
                     item.get("media_status") == "SENT" or
@@ -604,7 +634,8 @@ class BackgroundJobWorker:
                                     message=resolved_msg,
                                     attachment_path=target_media_path,
                                     message_format=item_format,
-                                    stage=target_stage
+                                    stage=target_stage,
+                                    stage_callback=recipient_stage_callback
                                 )
                             except TypeError:
                                 try:
@@ -612,18 +643,33 @@ class BackgroundJobWorker:
                                         phone=recipient_phone,
                                         message=resolved_msg,
                                         attachment_path=target_media_path,
-                                        message_format=item_format
+                                        message_format=item_format,
+                                        stage=target_stage
                                     )
                                 except TypeError:
-                                    res = provider.send_message(
-                                        phone=recipient_phone,
-                                        message=resolved_msg,
-                                        attachment_path=target_media_path
-                                    )
+                                    try:
+                                        res = provider.send_message(
+                                            phone=recipient_phone,
+                                            message=resolved_msg,
+                                            attachment_path=target_media_path,
+                                            message_format=item_format
+                                        )
+                                    except TypeError:
+                                        res = provider.send_message(
+                                            phone=recipient_phone,
+                                            message=resolved_msg,
+                                            attachment_path=target_media_path
+                                        )
                     except Exception as e:
                         res = {"status": "FAILED", "error": str(e)}
 
                     status = res.get("status")
+                    if status != "SENT":
+                        try:
+                            if hasattr(provider, "_engine") and provider._engine and hasattr(provider._engine, "_dismiss_media_preview"):
+                                provider._engine._dismiss_media_preview()
+                        except Exception:
+                            pass
                     if status == "SENT":
                         dispatched_successfully = True
                         media_st = res.get("media_status") or ("SENT" if (media_path or is_text_only_retry) else "SKIPPED")

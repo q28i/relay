@@ -213,6 +213,10 @@ class MockMessagingProvider(MessagingProvider):
         }
 
     def send_message(self, phone: str, message: str, attachment_path: Optional[str] = None, message_format: str = "image_with_caption", stage: str = "all", **kwargs) -> Dict[str, Any]:
+        stage_cb = kwargs.get("stage_callback")
+        if stage_cb:
+            stage_cb("Simulating dispatch...")
+
         if self.simulation_delay > 0:
             time.sleep(self.simulation_delay)
 

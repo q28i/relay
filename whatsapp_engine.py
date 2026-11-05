@@ -107,23 +107,28 @@ class WhatsAppEngine:
         (By.CSS_SELECTOR, "div[data-testid='media-editor']"),
         (By.CSS_SELECTOR, "div[data-testid='image-canvas']"),
         (By.CSS_SELECTOR, "div[data-testid='media-preview-container']"),
+        (By.CSS_SELECTOR, "div[data-testid='drawer-middle']"),
         (By.XPATH, "//div[@role='dialog']"),
+        (By.XPATH, "//div[contains(@class, 'media-viewer') or contains(@class, 'media-editor') or contains(@class, 'image-editor')]"),
     ]
 
     PREVIEW_SEND_BUTTON_SELECTORS = [
         (By.CSS_SELECTOR, "div[data-animate-modal-popup='true'] span[data-icon='send']"),
         (By.CSS_SELECTOR, "div[data-animate-modal-popup='true'] span[data-icon='wds-send']"),
-        (By.CSS_SELECTOR, "div[data-animate-modal-popup='true'] div[role='button']"),
-        (By.CSS_SELECTOR, "div[data-testid='media-caption-input-container'] ~ div[role='button']"),
-        (By.CSS_SELECTOR, "div[data-testid='send']"),
-        (By.CSS_SELECTOR, "span[data-icon='send']"),
-        (By.CSS_SELECTOR, "span[data-icon='wds-send']"),
-        (By.CSS_SELECTOR, "button[aria-label='Send']"),
-        (By.CSS_SELECTOR, "div[aria-label='Send']"),
+        (By.XPATH, "//div[@role='dialog' or @data-animate-modal-popup='true' or contains(@class, 'media') or contains(@class, 'editor')]//span[@data-icon='send' or @data-icon='wds-send' or @data-icon='round-send-inverted']/ancestor::div[@role='button']"),
+        (By.XPATH, "//div[@data-testid='media-caption-input-container']/following-sibling::div//span[@data-icon='send' or @data-icon='wds-send']/ancestor::div[@role='button']"),
+        (By.XPATH, "//div[@role='button' and @aria-label='Send' and not(ancestor::footer)]"),
+        (By.CSS_SELECTOR, "div[data-testid='send'][role='button']"),
+        (By.XPATH, "//span[@data-icon='send' or @data-icon='wds-send']/ancestor::div[@role='button' and not(ancestor::footer)]"),
+        (By.CSS_SELECTOR, "div[data-animate-modal-popup='true'] div[data-testid='send']"),
         (By.XPATH, "//div[@role='dialog']//span[@data-icon='send']"),
+        (By.XPATH, "//div[@role='dialog']//span[@data-icon='wds-send']"),
         (By.XPATH, "//div[@role='dialog']//button[@aria-label='Send']"),
         (By.XPATH, "//div[@role='dialog']//div[@aria-label='Send']"),
-        (By.XPATH, "//span[@data-icon='send']/parent::div[@role='button']"),
+        (By.CSS_SELECTOR, "div[aria-label='Send'][role='button']"),
+        (By.CSS_SELECTOR, "button[aria-label='Send']"),
+        (By.CSS_SELECTOR, "div[data-testid='media-preview-send-btn']"),
+        (By.CSS_SELECTOR, "span[data-icon='round-send-inverted']"),
     ]
 
     INVALID_POPUP_SELECTORS = [
@@ -211,6 +216,95 @@ class WhatsAppEngine:
 
         return False
 
+    def is_logged_in(self) -> bool:
+        """
+        Non-destructively checks if WhatsApp Web is logged in without navigating or reloading.
+        Checks for chat list (#side), main chat window (#main), header, or conversation panel.
+        """
+        if not self.driver:
+            return False
+        try:
+            cur_url = self.driver.current_url or ""
+            if "web.whatsapp.com" not in cur_url:
+                return False
+        except Exception:
+            return False
+
+        # First check standard chat list
+        for by_type, query in self.CHAT_LIST_SELECTORS:
+            try:
+                elems = self.driver.find_elements(by_type, query)
+                if any(e.is_displayed() for e in elems):
+                    return True
+            except Exception:
+                pass
+
+        # Also check for active chat window / header / search pane (e.g. in single-pane or compact view)
+        active_pane_selectors = [
+            (By.ID, "main"),
+            (By.CSS_SELECTOR, "div#main"),
+            (By.CSS_SELECTOR, "header"),
+            (By.CSS_SELECTOR, "div[data-testid='conversation-panel-wrapper']"),
+            (By.CSS_SELECTOR, "footer"),
+            (By.CSS_SELECTOR, "div[contenteditable='true'][data-tab='10']"),
+        ]
+        for by_type, query in active_pane_selectors:
+            try:
+                elems = self.driver.find_elements(by_type, query)
+                if any(e.is_displayed() for e in elems):
+                    return True
+            except Exception:
+                pass
+
+        return False
+
+    def _dismiss_media_preview(self):
+        """
+        Safely dismisses any active media preview overlay or editor modal
+        using Close buttons and Escape key, ensuring the DOM is clean
+        for subsequent recipient navigations.
+        """
+        if not self.driver:
+            return
+        dismiss_selectors = [
+            (By.CSS_SELECTOR, "span[data-icon='x']"),
+            (By.CSS_SELECTOR, "span[data-icon='close']"),
+            (By.CSS_SELECTOR, "span[data-icon='back']"),
+            (By.CSS_SELECTOR, "div[aria-label='Close']"),
+            (By.CSS_SELECTOR, "div[data-testid='btn-close']"),
+            (By.XPATH, "//div[@role='dialog']//span[@data-icon='x']/ancestor::div[@role='button']"),
+            (By.XPATH, "//div[@role='dialog']//button[@aria-label='Close']"),
+        ]
+        for by_type, query in dismiss_selectors:
+            try:
+                btns = self.driver.find_elements(by_type, query)
+                for btn in btns:
+                    if btn.is_displayed():
+                        try:
+                            btn.click()
+                        except Exception:
+                            self.driver.execute_script("arguments[0].click();", btn)
+                        time.sleep(0.3)
+                        break
+            except Exception:
+                pass
+
+        try:
+            active_el = self.driver.switch_to.active_element
+            if active_el:
+                active_el.send_keys(Keys.ESCAPE)
+                time.sleep(0.2)
+        except Exception:
+            pass
+
+        try:
+            body = self.driver.find_element(By.TAG_NAME, "body")
+            if body:
+                body.send_keys(Keys.ESCAPE)
+                time.sleep(0.2)
+        except Exception:
+            pass
+
     def send_message(
         self,
         phone: str,
@@ -218,7 +312,9 @@ class WhatsAppEngine:
         attachment_path: Optional[str] = None,
         wait_timeout: int = 30,
         message_format: str = "image_with_caption",
-        stage: str = "all"
+        stage: str = "all",
+        stage_callback: Optional[Callable[[str], None]] = None,
+        **kwargs
     ) -> Dict[str, Any]:
         """
         Sends a message and/or media attachment to a phone number.
@@ -226,7 +322,12 @@ class WhatsAppEngine:
         Supports message_format: 'image_with_caption' (default) or 'image_then_text'.
         Supports stage: 'all' (default), 'text_only' (skips media, preserves media_status='SENT').
         """
+        # Ensure any stuck preview modal from a previous operation is dismissed
+        self._dismiss_media_preview()
+
         if stage == "text_only":
+            if stage_callback:
+                stage_callback("Preparing text-only retry...")
             message = process_spintax(message)
             if not message or not message.strip():
                 return {
@@ -247,6 +348,8 @@ class WhatsAppEngine:
             encoded_msg = urllib.parse.quote(message)
             direct_url = f"{self.URL_BASE}/send?phone={phone}&text={encoded_msg}"
             try:
+                if stage_callback:
+                    stage_callback("Opening chat...")
                 self.driver.get(direct_url)
             except Exception as e:
                 return {
@@ -263,7 +366,7 @@ class WhatsAppEngine:
                 }
 
             try:
-                text_res = self._send_text_message_flow(message, wait_timeout=wait_timeout)
+                text_res = self._send_text_message_flow(message, wait_timeout=wait_timeout, stage_callback=stage_callback)
             except Exception as e:
                 text_res = {"status": "FAILED", "error": str(e)}
 
@@ -362,6 +465,8 @@ class WhatsAppEngine:
             direct_url += f"&text={encoded_msg}"
 
         try:
+            if stage_callback:
+                stage_callback(f"Opening conversation for {phone}...")
             self.driver.get(direct_url)
         except Exception as e:
             return {"status": "FAILED", "error": f"Failed to load chat URL: {e}"}
@@ -380,6 +485,8 @@ class WhatsAppEngine:
 
             # 2. If Media Attachment is specified, attach file
             if attachment_path:
+                if stage_callback:
+                    stage_callback("Waiting for chat interface to load...")
                 # Verify chat input or chat area is loaded
                 chat_loaded = False
                 for by_type, query in self.MESSAGE_INPUT_SELECTORS:
@@ -394,7 +501,7 @@ class WhatsAppEngine:
                 if chat_loaded:
                     if message_format == "image_then_text" and message and message.strip():
                         # Option B: Send image first without caption, then send separate text
-                        media_res = self._send_attachment_flow(attachment_path, caption="", timeout=wait_timeout)
+                        media_res = self._send_attachment_flow(attachment_path, caption="", timeout=wait_timeout, stage_callback=stage_callback)
                         if media_res.get("status") != "SENT":
                             return {
                                 **media_res,
@@ -407,7 +514,9 @@ class WhatsAppEngine:
                             }
                         time.sleep(1.0)
                         try:
-                            text_res = self._send_text_message_flow(message, wait_timeout=wait_timeout)
+                            if stage_callback:
+                                stage_callback("Sending follow-up text...")
+                            text_res = self._send_text_message_flow(message, wait_timeout=wait_timeout, stage_callback=stage_callback)
                         except Exception as ex:
                             text_res = {"status": "FAILED", "error": str(ex)}
 
@@ -455,7 +564,7 @@ class WhatsAppEngine:
                             }
                     else:
                         # Option A (Default): One outgoing image message with the caption
-                        media_res = self._send_attachment_flow(attachment_path, caption=message, timeout=wait_timeout)
+                        media_res = self._send_attachment_flow(attachment_path, caption=message, timeout=wait_timeout, stage_callback=stage_callback)
                         if media_res.get("status") == "SENT":
                             return {
                                 **media_res,
@@ -480,7 +589,9 @@ class WhatsAppEngine:
             # 3. Text-only message flow
             else:
                 try:
-                    text_res = self._send_text_message_flow(message, wait_timeout=wait_timeout)
+                    if stage_callback:
+                        stage_callback("Sending text message...")
+                    text_res = self._send_text_message_flow(message, wait_timeout=wait_timeout, stage_callback=stage_callback)
                 except Exception as ex:
                     text_res = {"status": "FAILED", "error": str(ex)}
 
@@ -515,7 +626,7 @@ class WhatsAppEngine:
 
         return {"status": "FAILED", "media_sent": False, "caption_sent": False, "error": "Timed out waiting for chat to initialize"}
 
-    def _send_text_message_flow(self, message: str, wait_timeout: int = 30) -> Dict[str, Any]:
+    def _send_text_message_flow(self, message: str, wait_timeout: int = 30, stage_callback: Optional[Callable[[str], None]] = None) -> Dict[str, Any]:
         """
         Robustly sends a text message into the active WhatsApp Web conversation.
         Waits for main footer composer, safely handles stale element references,
@@ -537,6 +648,8 @@ class WhatsAppEngine:
                 pass
 
         # Step 1: Locate interactable footer message composer
+        if stage_callback:
+            stage_callback("Locating message composer...")
         start_time = time.time()
         composer_el = None
 
@@ -567,6 +680,8 @@ class WhatsAppEngine:
             return {"status": "FAILED", "error": "Composer element not interactable or not found"}
 
         # Step 2: Focus and insert text
+        if stage_callback:
+            stage_callback("Typing message text...")
         try:
             try:
                 composer_el.click()
@@ -604,6 +719,8 @@ class WhatsAppEngine:
             return {"status": "FAILED", "error": f"Failed inserting text into composer: {e}"}
 
         # Step 3: Click Send button or send ENTER
+        if stage_callback:
+            stage_callback("Submitting message...")
         send_clicked = False
         time.sleep(0.3)
         for by_type, query in self.SEND_BUTTON_SELECTORS:
@@ -633,10 +750,12 @@ class WhatsAppEngine:
                 return {"status": "FAILED", "error": f"Failed submitting text message: {e}"}
 
         time.sleep(1.0)
+        if stage_callback:
+            stage_callback("Text delivered.")
         return {"status": "SENT", "error": None}
 
 
-    def _send_attachment_flow(self, file_path: str, caption: str = "", timeout: int = 30) -> Dict[str, Any]:
+    def _send_attachment_flow(self, file_path: str, caption: str = "", timeout: int = 30, stage_callback: Optional[Callable[[str], None]] = None) -> Dict[str, Any]:
         """Handles attaching images, videos, and documents with captions honestly."""
         abs_path = os.path.abspath(file_path)
         if not os.path.isfile(abs_path):
@@ -666,6 +785,8 @@ class WhatsAppEngine:
         is_media = ext in [".png", ".jpg", ".jpeg", ".gif", ".webp", ".mp4", ".mov", ".3gp", ".m4v"]
 
         # Step 1: Check if file input is already in DOM
+        if stage_callback:
+            stage_callback("Attaching media file...")
         file_inputs = self.driver.find_elements(By.CSS_SELECTOR, "input[type='file']")
 
         # Step 2: If no file input in DOM, click Attach button to open attach menu
@@ -746,6 +867,8 @@ class WhatsAppEngine:
             }
 
         # Step 5: Wait for WhatsApp preview overlay to appear
+        if stage_callback:
+            stage_callback("Waiting for media preview...")
         start_preview_wait = time.time()
         preview_ready = False
         while time.time() - start_preview_wait < timeout:
@@ -772,6 +895,7 @@ class WhatsAppEngine:
             time.sleep(0.6)
 
         if not preview_ready:
+            self._dismiss_media_preview()
             return {
                 "status": "FAILED",
                 "media_sent": False,
@@ -782,6 +906,8 @@ class WhatsAppEngine:
         # Step 6: Handle Caption (if present, attach to media send; never send caption first as text)
         caption_applied = False
         if caption and caption.strip():
+            if stage_callback:
+                stage_callback("Applying caption to media...")
             caption_text = caption.strip()
             time.sleep(0.5)
 
@@ -860,6 +986,7 @@ class WhatsAppEngine:
 
             # ZERO SILENT DROPPING: If caption is required but couldn't be applied, abort send!
             if not caption_applied:
+                self._dismiss_media_preview()
                 return {
                     "status": "FAILED",
                     "media_sent": False,
@@ -868,23 +995,33 @@ class WhatsAppEngine:
                 }
 
         # Step 7: Click preview send button
+        if stage_callback:
+            stage_callback("Sending media attachment...")
         send_clicked = False
+        target_btn = None
         for by_type, query in self.PREVIEW_SEND_BUTTON_SELECTORS:
             try:
                 btns = self.driver.find_elements(by_type, query)
                 for btn in btns:
                     if btn.is_displayed():
-                        time.sleep(0.5)
-                        try:
-                            btn.click()
-                        except Exception:
-                            self.driver.execute_script("arguments[0].click();", btn)
-                        send_clicked = True
+                        target_btn = btn
                         break
-                if send_clicked:
+                if target_btn:
                     break
             except Exception:
                 pass
+
+        if target_btn:
+            time.sleep(0.4)
+            try:
+                target_btn.click()
+                send_clicked = True
+            except Exception:
+                try:
+                    self.driver.execute_script("arguments[0].click();", target_btn)
+                    send_clicked = True
+                except Exception:
+                    pass
 
         if not send_clicked:
             try:
@@ -895,6 +1032,7 @@ class WhatsAppEngine:
                 pass
 
         if not send_clicked:
+            self._dismiss_media_preview()
             return {
                 "status": "FAILED",
                 "media_sent": False,
@@ -903,9 +1041,11 @@ class WhatsAppEngine:
             }
 
         # Step 8: Confirm sent media by waiting for preview overlay to dismiss
+        if stage_callback:
+            stage_callback("Verifying media outcome...")
         wait_dismiss = time.time()
         confirmed_sent = False
-        while time.time() - wait_dismiss < 10.0:
+        while time.time() - wait_dismiss < 15.0:
             overlay_still_visible = False
             for by_type, query in self.PREVIEW_CONTAINER_SELECTORS:
                 try:
@@ -917,11 +1057,23 @@ class WhatsAppEngine:
                     pass
 
             if not overlay_still_visible:
+                # Also check if any preview send button is still in DOM and displayed
+                for by_type, query in self.PREVIEW_SEND_BUTTON_SELECTORS:
+                    try:
+                        elems = self.driver.find_elements(by_type, query)
+                        if any(e.is_displayed() for e in elems):
+                            overlay_still_visible = True
+                            break
+                    except Exception:
+                        pass
+
+            if not overlay_still_visible:
                 confirmed_sent = True
                 break
             time.sleep(0.5)
 
         if confirmed_sent:
+            time.sleep(0.8)
             return {
                 "status": "SENT",
                 "media_sent": True,
@@ -929,11 +1081,12 @@ class WhatsAppEngine:
                 "error": None
             }
         else:
+            self._dismiss_media_preview()
             return {
                 "status": "FAILED",
                 "media_sent": False,
                 "caption_sent": False,
-                "error": "Media failed: attachment send was clicked, but WhatsApp preview overlay did not clear within 10s. Media transmission unconfirmed."
+                "error": "Media failed: attachment send was clicked, but WhatsApp preview overlay did not clear within 15s. Preview dismissed to prevent stuck state."
             }
 
     def _dismiss_invalid_popup(self):

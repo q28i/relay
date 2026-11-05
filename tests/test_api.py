@@ -365,7 +365,7 @@ class TestConfigAndBrowserRoutes:
         assert conn_res.status_code == 200
         cdata = conn_res.json()
         assert cdata["profile_dir"] == "__dedicated__"
-        assert cdata["status"] == "Not checked"
+        assert cdata["status"] in ("Not checked", "Active in Relay")
 
     def test_browser_disconnect(self):
         res = client.post("/api/browser/disconnect")

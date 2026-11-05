@@ -745,6 +745,7 @@ class BrowserManager:
                 options.add_argument("--disable-blink-features=AutomationControlled")
                 options.add_argument("--disable-infobars")
                 options.add_argument("--start-maximized")
+                options.add_argument("--window-size=1920,1080")
                 options.add_argument("--no-sandbox")
                 options.add_argument("--disable-dev-shm-usage")
                 options.add_experimental_option("excludeSwitches", ["enable-automation"])
@@ -768,6 +769,7 @@ class BrowserManager:
                 options.add_argument("--disable-blink-features=AutomationControlled")
                 options.add_argument("--disable-infobars")
                 options.add_argument("--start-maximized")
+                options.add_argument("--window-size=1920,1080")
                 options.add_experimental_option("excludeSwitches", ["enable-automation"])
                 options.add_experimental_option("useAutomationExtension", False)
 
@@ -790,6 +792,8 @@ class BrowserManager:
                     options.add_argument("-profile")
                     options.add_argument(profile["path"])
 
+                options.add_argument("--width=1920")
+                options.add_argument("--height=1080")
                 if headless:
                     options.add_argument("-headless")
 
@@ -797,6 +801,11 @@ class BrowserManager:
 
             else:
                 raise ValueError(f"Unknown driver type: {driver_type}")
+
+            try:
+                driver.set_window_size(1920, 1080)
+            except Exception:
+                pass
 
             # Verify window / process associated with that launch
             window_verified = False

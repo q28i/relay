@@ -587,9 +587,17 @@ class ConnectionMonitor:
                 is_qr_present = False
                 is_syncing = False
 
-                # 4A. Check Chat List (Authentication confirmation)
+                # 4A. Check Chat List and Active Chat Panes (Authentication confirmation)
                 from whatsapp_engine import WhatsAppEngine
-                for by_type, query in WhatsAppEngine.CHAT_LIST_SELECTORS:
+                auth_selectors = list(WhatsAppEngine.CHAT_LIST_SELECTORS) + [
+                    (By.ID, "main"),
+                    (By.CSS_SELECTOR, "div#main"),
+                    (By.CSS_SELECTOR, "header"),
+                    (By.CSS_SELECTOR, "div[data-testid='conversation-panel-wrapper']"),
+                    (By.CSS_SELECTOR, "footer"),
+                    (By.CSS_SELECTOR, "div[contenteditable='true'][data-tab='10']"),
+                ]
+                for by_type, query in auth_selectors:
                     try:
                         elems = driver.find_elements(by_type, query)
                         if any(e.is_displayed() for e in elems):
