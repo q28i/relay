@@ -8585,6 +8585,15 @@ class WhatsAppDashboardApp {
       }
       if (campEl) campEl.textContent = data.campaign_name || 'Ad-hoc dispatch';
 
+      const medStEl = document.getElementById('rec-drawer-media-status');
+      const txtStEl = document.getElementById('rec-drawer-text-status');
+      const recEl = document.getElementById('rec-drawer-reconcile');
+      const recModeEl = document.getElementById('rec-drawer-recovery-mode');
+      if (medStEl) medStEl.textContent = data.media_status || (data.media_path ? 'PENDING' : 'SKIPPED');
+      if (txtStEl) txtStEl.textContent = data.text_status || (data.message ? 'PENDING' : 'SKIPPED');
+      if (recEl) recEl.textContent = data.delivery_label || data.status || 'Standard';
+      if (recModeEl) recModeEl.textContent = data.recovery_action_label || data.recovery_eligibility || 'none';
+
       if (delivEl) {
         if (data.status === 'SENT' || data.status === 'COMPLETED') {
           delivEl.innerHTML = '<strong>Handoff Confirmed:</strong> Message was successfully handed off to the WhatsApp Web chat input and accepted by the WhatsApp network interface.';

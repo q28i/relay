@@ -792,9 +792,9 @@ class BackgroundJobWorker:
                     else:
                         last_error = res.get("error") or "Transmission failed"
                         # Classify permanent vs transient failures
-                        err_upper = last_error.upper()
-                        is_permanent = any(kw in err_upper for kw in [
-                            "INVALID", "NOT A VALID", "UNREGISTERED", "NOT ON WHATSAPP", "OPTED_OUT", "SUPPRESSED", "MISSING ON DISK", "0 BYTES"
+                        err_upper = f"{last_error} {status}".upper()
+                        is_permanent = status in ("INVALID_NUMBER", "SUPPRESSED", "OPTED_OUT") or any(kw in err_upper for kw in [
+                            "INVALID", "NOT A VALID", "UNREGISTERED", "NOT REGISTERED", "NOT ON WHATSAPP", "OPTED_OUT", "SUPPRESSED", "MISSING ON DISK", "0 BYTES"
                         ])
 
                         if is_permanent or attempt >= max_retries:

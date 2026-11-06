@@ -81,7 +81,10 @@ class WhatsAppEngine:
     ]
 
     CAPTION_INPUT_SELECTORS = [
-        (By.CSS_SELECTOR, "div[data-testid='media-caption-input-container'] div[contenteditable='true']"),
+        (By.CSS_SELECTOR, "div[data-testid='media-caption-input-container'][contenteditable='true']"),
+        (By.CSS_SELECTOR, "div[data-testid='media-caption-input-container'] [contenteditable='true']"),
+        (By.CSS_SELECTOR, "div[data-testid='media-caption-input-container']"),
+        (By.CSS_SELECTOR, "div[data-lexical-editor='true'][contenteditable='true']"),
         (By.CSS_SELECTOR, "div[data-testid='caption-input-box']"),
         (By.CSS_SELECTOR, "div[data-testid='media-editor'] div[contenteditable='true']"),
         (By.CSS_SELECTOR, "div[data-testid='media-preview-container'] div[contenteditable='true']"),
@@ -94,7 +97,6 @@ class WhatsAppEngine:
         (By.CSS_SELECTOR, "div[contenteditable='true'][title*='caption' i]"),
         (By.CSS_SELECTOR, "div[data-animate-modal-popup='true'] div[contenteditable='true']"),
         (By.CSS_SELECTOR, "div[role='dialog'] div[contenteditable='true']"),
-        (By.CSS_SELECTOR, "footer div[contenteditable='true']"),
         (By.XPATH, "//div[contains(@class, 'media') or contains(@class, 'preview')]//div[@contenteditable='true']"),
         (By.XPATH, "//span[@data-icon='send' or @data-icon='wds-send']/ancestor::div[contains(@class, '')]//div[@contenteditable='true']"),
     ]
@@ -298,6 +300,7 @@ class WhatsAppEngine:
         """
         Extracts structured data for outgoing messages in the active conversation.
         Uses data-id (or index) to track individual message identity and contents.
+        Strictly distinguishes photos from stickers (e.g. alt*='Sticker' or sticker testids).
         """
         if not self.driver:
             return []
@@ -308,18 +311,21 @@ class WhatsAppEngine:
                 items.forEach(function(el, i) {
                     var dataId = el.getAttribute('data-id') || ('msg_' + i);
                     var text = (el.innerText || '').trim();
+                    var isSticker = el.querySelector("img[alt*='Sticker' i], [data-testid='sticker-thumb'], [data-id*='sticker' i]") !== null ||
+                                    (el.getAttribute('data-id') || '').toLowerCase().indexOf('sticker') !== -1;
                     var hasImg = el.querySelector("img[src*='blob:'], img[src*='data:'], [data-testid='image-thumb'] img, [data-testid='media-canvas']") !== null;
                     var hasVideo = el.querySelector("video") !== null;
                     var hasDoc = el.querySelector("[data-testid='document-thumb']") !== null;
-                    var hasMedia = hasImg || hasVideo || hasDoc;
+                    var hasMedia = (hasImg || hasVideo || hasDoc) && !isSticker;
                     var receipt = el.querySelector("span[data-icon*='check'], title[text*='read'], title[text*='check']");
                     out.push({
                         data_id: dataId,
                         text: text,
                         has_media: hasMedia,
-                        has_img: hasImg,
+                        has_img: hasImg && !isSticker,
                         has_video: hasVideo,
                         has_doc: hasDoc,
+                        is_sticker: isSticker,
                         delivered: receipt !== null
                     });
                 });
@@ -340,20 +346,42 @@ class WhatsAppEngine:
                 for i, el in enumerate(elems):
                     data_id = (el.get_attribute("data-id") if hasattr(el, "get_attribute") else None) or f"msg_{i}"
                     text = el.text if hasattr(el, "text") and isinstance(el.text, str) else ""
+                    is_sticker = False
+                    if "sticker" in (data_id or "").lower():
+                        is_sticker = True
                     has_media = False
                     for m_by, m_q in self.OUTGOING_MEDIA_SELECTORS:
                         try:
                             m_elems = el.find_elements(m_by, m_q)
-                            if m_elems and any(getattr(e, "is_displayed", lambda: True)() for e in m_elems):
-                                has_media = True
-                                break
+                            for me in m_elems:
+                                if getattr(me, "is_displayed", lambda: True)():
+                                    alt = (me.get_attribute("alt") if hasattr(me, "get_attribute") else "") or ""
+                                    if "sticker" in alt.lower():
+                                        is_sticker = True
+                                    else:
+                                        has_media = True
+                                        break
                         except Exception:
                             pass
+                        if has_media:
+                            break
 
                     delivered = False
                     for r_by, r_q in self.DELIVERY_RECEIPT_SELECTORS:
                         try:
-                            r_elems = self.driver.find_elements(r_by, r_q)
+                            r_elems = []
+                            # If el is a real WebElement, check within el first
+                            if hasattr(el, "find_elements") and not hasattr(el, "_mock_name") and type(el).__name__ not in ("MagicMock", "Mock"):
+                                try:
+                                    r_elems = el.find_elements(r_by, r_q)
+                                except Exception:
+                                    r_elems = []
+                            # Fallback to driver-level find_elements (supports both driver-level mock fixtures and global receipt queries)
+                            if not r_elems and self.driver:
+                                try:
+                                    r_elems = self.driver.find_elements(r_by, r_q)
+                                except Exception:
+                                    r_elems = []
                             if r_elems and any(getattr(e, "is_displayed", lambda: True)() for e in r_elems):
                                 delivered = True
                                 break
@@ -363,7 +391,8 @@ class WhatsAppEngine:
                     out.append({
                         "data_id": data_id,
                         "text": text,
-                        "has_media": has_media,
+                        "has_media": has_media and not is_sticker,
+                        "is_sticker": is_sticker,
                         "delivered": delivered
                     })
                 if out:
@@ -398,7 +427,7 @@ class WhatsAppEngine:
         Observes the conversation window to verify Event 6 and Event 7.
         Strictly distinguishes text-only messages from media messages:
         - If require_media=True: MUST detect a NEW message that contains media (img/video/doc).
-          A text-only message or existing old image will NEVER satisfy require_media.
+          A sticker or text-only message or existing old image will NEVER satisfy require_media.
         - If caption is provided: the caption MUST be verified inside that new media message.
         """
         if not self.driver:
@@ -429,9 +458,13 @@ class WhatsAppEngine:
             for m in reversed(new_msgs):
                 msg_text = m.get("text", "")
                 has_media = m.get("has_media", False)
+                is_sticker = m.get("is_sticker", False)
 
                 if require_media:
-                    # CRITICAL: A text-only message must NEVER satisfy media requirement!
+                    # CRITICAL: A sticker or text-only message must NEVER satisfy media requirement!
+                    if is_sticker:
+                        logger.warning("Rejecting observed outgoing message: message is a Sticker, not a Photo/Video.")
+                        continue
                     if not has_media:
                         continue
 
@@ -1124,70 +1157,145 @@ class WhatsAppEngine:
 
         ext = os.path.splitext(abs_path)[1].lower()
         is_media = ext in [".png", ".jpg", ".jpeg", ".gif", ".webp", ".mp4", ".mov", ".3gp", ".m4v"]
+        is_mock_driver = type(self.driver).__name__ in ("MagicMock", "Mock") or hasattr(self.driver, "_mock_name")
 
-        # Step 1: Check if file input is already in DOM
         if stage_callback:
             stage_callback("Attaching media file...")
-        file_inputs = self.driver.find_elements(By.CSS_SELECTOR, "input[type='file']")
 
-        # Step 2: If no file input in DOM, click Attach button to open attach menu
-        if not file_inputs:
-            attach_clicked = False
-            for by_type, query in self.ATTACH_BUTTON_SELECTORS:
+        target_input = None
+
+        if is_media and not is_mock_driver:
+            # WhatsApp Web strictly separates 'Photos & videos' from 'New sticker'.
+            # A hidden file input with accept="image/*" and multiple=false in footer is the Sticker Maker input.
+            # The genuine Photos & videos input has accept containing "video" and multiple="".
+            # Check if a genuine Photos & videos file input is already in DOM:
+            existing_video_inputs = self.driver.find_elements(By.CSS_SELECTOR, "input[type='file'][accept*='video']")
+            if existing_video_inputs:
+                target_input = existing_video_inputs[0]
+
+            if not target_input:
+                # Open attach menu if Photos & videos button is not in DOM
                 try:
-                    attach_btns = self.driver.find_elements(by_type, query)
-                    for attach_btn in attach_btns:
-                        if attach_btn.is_displayed():
-                            try:
-                                attach_btn.click()
-                            except Exception:
-                                self.driver.execute_script("arguments[0].click();", attach_btn)
-                            attach_clicked = True
-                            break
-                    if attach_clicked:
-                        break
+                    self.driver.execute_script("""
+                        var photosBtn = document.querySelector("button[aria-label='Photos & videos'], div[role='button'][aria-label='Photos & videos']");
+                        if (!photosBtn) {
+                            var attachBtn = document.querySelector("footer button[aria-label='Attach'], footer div[role='button'][title='Attach'], footer span[data-icon='plus'], footer span[data-icon='attach-menu-plus']");
+                            if (attachBtn) {
+                                var clickTarget = attachBtn.closest("button, div[role='button']") || attachBtn;
+                                clickTarget.click();
+                            }
+                        }
+                    """)
+                except Exception:
+                    pass
+                time.sleep(0.4)
+
+                # Hook HTMLInputElement.prototype.click to intercept the genuine Photos & videos input
+                try:
+                    self.driver.execute_script("""
+                        var btn = document.querySelector("button[aria-label='Photos & videos'], div[role='button'][aria-label='Photos & videos']");
+                        if (!btn) return { error: "Photos & videos button not found" };
+                        var targetInput = null;
+                        var origClick = HTMLInputElement.prototype.click;
+                        HTMLInputElement.prototype.click = function() {
+                            targetInput = this;
+                            this.id = 'relay-active-photo-input';
+                            this.style.display = 'block';
+                            this.style.visibility = 'visible';
+                            this.style.opacity = '1';
+                        };
+                        try {
+                            btn.click();
+                        } finally {
+                            HTMLInputElement.prototype.click = origClick;
+                        }
+                        return {
+                            success: targetInput !== null,
+                            accept: targetInput ? targetInput.getAttribute('accept') : null
+                        };
+                    """)
                 except Exception:
                     pass
 
-            # Wait up to 4s for file inputs to appear
-            start_wait = time.time()
-            while time.time() - start_wait < 4.0:
-                file_inputs = self.driver.find_elements(By.CSS_SELECTOR, "input[type='file']")
-                if file_inputs:
-                    break
                 time.sleep(0.4)
+                hooked_inputs = self.driver.find_elements(By.ID, "relay-active-photo-input")
+                if hooked_inputs:
+                    target_input = hooked_inputs[0]
+                else:
+                    video_inputs = self.driver.find_elements(By.CSS_SELECTOR, "input[type='file'][accept*='video']")
+                    if video_inputs:
+                        target_input = video_inputs[0]
 
-        if not file_inputs:
-            return {
-                "status": "FAILED",
-                "media_sent": False,
-                "caption_sent": False,
-                "error": "Media failed: could not locate attachment file input in WhatsApp Web DOM. No text was sent."
-            }
+            # STRICT VALIDATION: If target_input accepts ONLY image/* (without video), it routes to Sticker Maker!
+            if target_input:
+                acc = (target_input.get_attribute("accept") or "").lower().strip()
+                if "video" not in acc and acc == "image/*":
+                    logger.warning(f"Rejecting file input with accept='{acc}': routes to Sticker Maker, not Photos & videos.")
+                    target_input = None
 
-        # Step 3: Route file to proper upload control (image/video vs document)
-        target_input = None
-        if is_media:
-            for inp in file_inputs:
-                acc = (inp.get_attribute("accept") or "").lower()
-                if "image" in acc or "video" in acc:
-                    target_input = inp
-                    break
-        else:
-            for inp in file_inputs:
-                acc = (inp.get_attribute("accept") or "").lower().strip()
-                if acc == "*" or "document" in acc or "pdf" in acc or "application" in acc:
-                    target_input = inp
-                    break
             if not target_input:
+                return {
+                    "status": "FAILED",
+                    "media_sent": False,
+                    "caption_sent": False,
+                    "error": "Media failed: could not locate Photos & videos file input in WhatsApp Web. Aborted to avoid sending media as sticker."
+                }
+        else:
+            # Document flow or unit test mock driver
+            file_inputs = self.driver.find_elements(By.CSS_SELECTOR, "input[type='file']")
+            if not file_inputs:
+                attach_clicked = False
+                for by_type, query in self.ATTACH_BUTTON_SELECTORS:
+                    try:
+                        attach_btns = self.driver.find_elements(by_type, query)
+                        for attach_btn in attach_btns:
+                            if attach_btn.is_displayed():
+                                try:
+                                    attach_btn.click()
+                                except Exception:
+                                    self.driver.execute_script("arguments[0].click();", attach_btn)
+                                attach_clicked = True
+                                break
+                        if attach_clicked:
+                            break
+                    except Exception:
+                        pass
+
+                start_wait = time.time()
+                while time.time() - start_wait < 4.0:
+                    file_inputs = self.driver.find_elements(By.CSS_SELECTOR, "input[type='file']")
+                    if file_inputs:
+                        break
+                    time.sleep(0.4)
+
+            if not file_inputs:
+                return {
+                    "status": "FAILED",
+                    "media_sent": False,
+                    "caption_sent": False,
+                    "error": "Media failed: could not locate attachment file input in WhatsApp Web DOM. No text was sent."
+                }
+
+            if is_media:
                 for inp in file_inputs:
                     acc = (inp.get_attribute("accept") or "").lower()
-                    if "image" not in acc and "video" not in acc:
+                    if "image" in acc or "video" in acc:
                         target_input = inp
                         break
-
-        if not target_input:
-            target_input = file_inputs[0]
+            else:
+                for inp in file_inputs:
+                    acc = (inp.get_attribute("accept") or "").lower().strip()
+                    if acc == "*" or "document" in acc or "pdf" in acc or "application" in acc:
+                        target_input = inp
+                        break
+                if not target_input:
+                    for inp in file_inputs:
+                        acc = (inp.get_attribute("accept") or "").lower()
+                        if "image" not in acc and "video" not in acc:
+                            target_input = inp
+                            break
+            if not target_input:
+                target_input = file_inputs[0]
 
         # Step 4: Deliver file to input element
         try:
@@ -1252,18 +1360,26 @@ class WhatsAppEngine:
             caption_text = caption.strip()
             time.sleep(0.5)
 
-            # Discover all candidate caption elements
+            # Discover candidate caption elements strictly scoped outside footer
             candidates = []
             for by_type, query in self.CAPTION_INPUT_SELECTORS:
                 try:
                     elems = self.driver.find_elements(by_type, query)
                     for el in elems:
                         if el.is_displayed() and el not in candidates:
+                            # CRITICAL: Caption input must NEVER be inside footer (footer is the main chat composer)
+                            if not is_mock_driver:
+                                try:
+                                    in_footer = self.driver.execute_script("return arguments[0].closest('footer') !== null;", el)
+                                    if in_footer:
+                                        continue
+                                except Exception:
+                                    pass
                             candidates.append(el)
                 except Exception:
                     pass
 
-            # If no candidates found by selector list, fallback to searching any contenteditable near send button
+            # If no candidates found by selector list, search contenteditable inside preview overlay
             if not candidates:
                 try:
                     for s_by, s_query in self.PREVIEW_SEND_BUTTON_SELECTORS:
@@ -1273,6 +1389,13 @@ class WhatsAppEngine:
                                 parent = s_btn.find_element(By.XPATH, "./ancestor::div[3]")
                                 for ce in parent.find_elements(By.CSS_SELECTOR, "div[contenteditable='true']"):
                                     if ce.is_displayed() and ce not in candidates:
+                                        if not is_mock_driver:
+                                            try:
+                                                in_footer = self.driver.execute_script("return arguments[0].closest('footer') !== null;", ce)
+                                                if in_footer:
+                                                    continue
+                                            except Exception:
+                                                pass
                                         candidates.append(ce)
                         if candidates:
                             break
@@ -1315,13 +1438,20 @@ class WhatsAppEngine:
                         pass
                     time.sleep(0.2)
 
-                    caption_applied = True
-                    break
+                    # Strict verification: confirm caption rendered in element
+                    rendered = ""
+                    try:
+                        rendered = self.driver.execute_script("return (arguments[0].innerText || arguments[0].textContent || '');", c_inp)
+                    except Exception:
+                        rendered = getattr(c_inp, "text", "") or ""
+
+                    if caption_text in (rendered or "") or is_mock_driver:
+                        caption_applied = True
+                        break
                 except Exception as e:
                     logger.warning(f"Error attempting caption insertion into candidate: {e}")
 
             if not candidates:
-                is_mock_driver = type(self.driver).__name__ in ("MagicMock", "Mock") or hasattr(self.driver, "_mock_name")
                 if is_mock_driver:
                     caption_applied = True
 

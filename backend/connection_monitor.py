@@ -517,6 +517,16 @@ class ConnectionMonitor:
         while self._monitoring_active:
             try:
                 time.sleep(1.8)
+                try:
+                    from backend.job_queue import _session_dispatch_lock
+                    if _session_dispatch_lock.locked():
+                        # Message dispatch is actively interacting with the browser.
+                        # Yield to prevent WebDriver concurrency conflicts and DOM collisions.
+                        time.sleep(1.5)
+                        continue
+                except Exception:
+                    pass
+
                 with self._lock:
                     if not self._monitoring_active or not self._driver:
                         break
@@ -666,7 +676,6 @@ class ConnectionMonitor:
                     (By.CSS_SELECTOR, "div[data-animate-progress]"),
                     (By.CSS_SELECTOR, "progress"),
                     (By.XPATH, "//div[contains(text(), 'Downloading messages')]"),
-                    (By.XPATH, "//div[contains(text(), 'Starting chat')]"),
                     (By.XPATH, "//div[contains(text(), 'Loading your chats')]")
                 ]
                 for by_type, query in sync_selectors:
