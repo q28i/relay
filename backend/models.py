@@ -337,6 +337,7 @@ class TestSendRequest(BaseModel):
     message: str = Field(default="", description="Content of test message to send")
     media_id: Optional[int] = Field(default=None, description="Optional media asset ID to attach")
     attachment_path: Optional[str] = Field(default=None, description="Optional direct attachment path")
+    message_format: Optional[str] = Field(default="image_with_caption", description="image_with_caption | image_then_text")
 
 
 # --- Content Collections Models ---

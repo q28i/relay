@@ -287,6 +287,8 @@ class DatabaseManager:
                     cursor.execute("ALTER TABLE jobs ADD COLUMN suppressed_count INTEGER DEFAULT 0")
                 if "scheduled_at" not in job_cols:
                     cursor.execute("ALTER TABLE jobs ADD COLUMN scheduled_at TEXT")
+                if "updated_at" not in job_cols:
+                    cursor.execute("ALTER TABLE jobs ADD COLUMN updated_at TEXT")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs (status)")
 
                 # 9. Durable Campaign Queue Items with Idempotency
@@ -2057,30 +2059,32 @@ class DatabaseManager:
         with _lock:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                completed_at = datetime.now().isoformat() if status in ("COMPLETED", "FAILED", "CANCELLED") else None
+                now = datetime.now().isoformat()
+                completed_at = now if status in ("COMPLETED", "FAILED", "CANCELLED") else None
                 cursor.execute("""
                     UPDATE jobs
-                    SET status = ?, completed_at = COALESCE(?, completed_at), error_message = ?
+                    SET status = ?, completed_at = COALESCE(?, completed_at), error_message = ?, updated_at = ?
                     WHERE id = ?
-                """, (status, completed_at, error_message, job_id))
+                """, (status, completed_at, error_message, now, job_id))
                 conn.commit()
 
     def update_job_progress(self, job_id: str, sent_count: int, failed_count: int, current_recipient: str = "", suppressed_count: Optional[int] = None):
         with _lock:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
+                now = datetime.now().isoformat()
                 if suppressed_count is not None:
                     cursor.execute("""
                         UPDATE jobs
-                        SET sent_count = ?, failed_count = ?, current_recipient = ?, suppressed_count = ?
+                        SET sent_count = ?, failed_count = ?, current_recipient = ?, suppressed_count = ?, updated_at = ?
                         WHERE id = ?
-                    """, (sent_count, failed_count, current_recipient, suppressed_count, job_id))
+                    """, (sent_count, failed_count, current_recipient, suppressed_count, now, job_id))
                 else:
                     cursor.execute("""
                         UPDATE jobs
-                        SET sent_count = ?, failed_count = ?, current_recipient = ?
+                        SET sent_count = ?, failed_count = ?, current_recipient = ?, updated_at = ?
                         WHERE id = ?
-                    """, (sent_count, failed_count, current_recipient, job_id))
+                    """, (sent_count, failed_count, current_recipient, now, job_id))
                 conn.commit()
 
     def record_job_result(

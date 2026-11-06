@@ -16,7 +16,7 @@ Contract endpoints:
 
 import os
 from typing import Dict, Any, Optional, List
-from fastapi import APIRouter, HTTPException, Query, Body
+from fastapi import APIRouter, HTTPException, Query, Body, Response
 
 from browser_manager import BrowserManager
 from config_manager import ConfigManager
@@ -1019,7 +1019,13 @@ def send_test_message(payload: TestSendRequest):
     adapter = get_browser_adapter()
 
     try:
-        res = adapter.send_message(phone=cleaned, message=message_text, attachment_path=attachment_path)
+        msg_fmt = getattr(payload, "message_format", None) or "image_with_caption"
+        res = adapter.send_message(
+            phone=cleaned,
+            message=message_text,
+            attachment_path=attachment_path,
+            message_format=msg_fmt
+        )
         status = res.get("status") if isinstance(res, dict) else None
         success = (status == "SENT") or (res.get("success", False) if isinstance(res, dict) else False)
         error_msg = res.get("error", "") if isinstance(res, dict) else ""
@@ -1061,6 +1067,22 @@ def send_test_message(payload: TestSendRequest):
                 "Check server logs and browser status."
             )
         )
+
+
+@router.get("/api/browser/screenshot")
+def get_browser_screenshot():
+    from backend.connection_monitor import connection_monitor
+    driver = connection_monitor.get_driver()
+    if not driver:
+        adapter = get_browser_adapter()
+        driver = getattr(adapter, "driver", None) or getattr(getattr(adapter, "_engine", None), "driver", None)
+    if not driver:
+        raise HTTPException(status_code=404, detail="No active browser session")
+    try:
+        png_data = driver.get_screenshot_as_png()
+        return Response(content=png_data, media_type="image/png")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to capture screenshot: {str(e)}")
 
 
 # Legacy helpers

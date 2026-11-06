@@ -587,24 +587,50 @@ class ConnectionMonitor:
                 is_qr_present = False
                 is_syncing = False
 
-                # 4A. Check Chat List and Active Chat Panes (Authentication confirmation)
-                from whatsapp_engine import WhatsAppEngine
-                auth_selectors = list(WhatsAppEngine.CHAT_LIST_SELECTORS) + [
-                    (By.ID, "main"),
-                    (By.CSS_SELECTOR, "div#main"),
-                    (By.CSS_SELECTOR, "header"),
-                    (By.CSS_SELECTOR, "div[data-testid='conversation-panel-wrapper']"),
-                    (By.CSS_SELECTOR, "footer"),
-                    (By.CSS_SELECTOR, "div[contenteditable='true'][data-tab='10']"),
+                # 4A. Check QR Code Presence first (prevents false positive authentication)
+                qr_selectors = [
+                    (By.CSS_SELECTOR, "canvas[aria-label*='Scan']"),
+                    (By.CSS_SELECTOR, "canvas"),
+                    (By.CSS_SELECTOR, "div[data-ref]")
                 ]
-                for by_type, query in auth_selectors:
+                for by_type, query in qr_selectors:
                     try:
                         elems = driver.find_elements(by_type, query)
                         if any(e.is_displayed() for e in elems):
-                            is_logged_in = True
+                            is_qr_present = True
                             break
                     except Exception:
                         pass
+
+                # 4B. If QR code is not displayed, check Chat List and Active Chat Panes
+                if not is_qr_present:
+                    from whatsapp_engine import WhatsAppEngine
+                    for by_type, query in WhatsAppEngine.CHAT_LIST_SELECTORS:
+                        try:
+                            elems = driver.find_elements(by_type, query)
+                            if any(e.is_displayed() for e in elems):
+                                is_logged_in = True
+                                break
+                        except Exception:
+                            pass
+
+                    if not is_logged_in:
+                        # Specific WhatsApp conversation view elements.
+                        # Generic 'header' and 'footer' tags alone MUST NOT establish authentication.
+                        specific_chat_selectors = [
+                            (By.ID, "main"),
+                            (By.CSS_SELECTOR, "div#main"),
+                            (By.CSS_SELECTOR, "div[data-testid='conversation-panel-wrapper']"),
+                            (By.CSS_SELECTOR, "div[contenteditable='true'][data-tab='10']"),
+                        ]
+                        for by_type, query in specific_chat_selectors:
+                            try:
+                                elems = driver.find_elements(by_type, query)
+                                if any(e.is_displayed() for e in elems):
+                                    is_logged_in = True
+                                    break
+                            except Exception:
+                                pass
 
                 if is_logged_in:
                     self._reconnect_attempts = 0

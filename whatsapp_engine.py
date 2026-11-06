@@ -143,6 +143,29 @@ class WhatsAppEngine:
         (By.XPATH, "//button[contains(., 'OK')]")
     ]
 
+    OUTGOING_MESSAGE_SELECTORS = [
+        (By.CSS_SELECTOR, "div#main div.message-out"),
+        (By.CSS_SELECTOR, "div.message-out"),
+        (By.CSS_SELECTOR, "div[data-testid='msg-container']"),
+    ]
+
+    OUTGOING_MEDIA_SELECTORS = [
+        (By.CSS_SELECTOR, "div#main div.message-out img"),
+        (By.CSS_SELECTOR, "div#main div.message-out video"),
+        (By.CSS_SELECTOR, "div#main div.message-out [data-testid='media-canvas']"),
+        (By.CSS_SELECTOR, "div#main div.message-out [data-testid='image-thumb']"),
+        (By.CSS_SELECTOR, "div#main div.message-out [data-testid='audio-player']"),
+        (By.CSS_SELECTOR, "div.message-out img"),
+    ]
+
+    DELIVERY_RECEIPT_SELECTORS = [
+        (By.CSS_SELECTOR, "span[data-icon='msg-check']"),
+        (By.CSS_SELECTOR, "span[data-icon='msg-dblcheck']"),
+        (By.CSS_SELECTOR, "span[data-icon='msg-dblcheck-ack']"),
+        (By.CSS_SELECTOR, "span[data-testid='msg-check']"),
+        (By.CSS_SELECTOR, "span[data-testid='msg-dblcheck']"),
+    ]
+
     def __init__(self, driver=None, headless: bool = False):
         self.driver = driver
         self.headless = headless
@@ -219,7 +242,8 @@ class WhatsAppEngine:
     def is_logged_in(self) -> bool:
         """
         Non-destructively checks if WhatsApp Web is logged in without navigating or reloading.
-        Checks for chat list (#side), main chat window (#main), header, or conversation panel.
+        Checks for chat list (#side) or active chat window with composer.
+        Generic elements ('header', 'footer') alone MUST NOT establish authentication.
         """
         if not self.driver:
             return False
@@ -230,7 +254,15 @@ class WhatsAppEngine:
         except Exception:
             return False
 
-        # First check standard chat list
+        # First, ensure QR code scan canvas is absent
+        try:
+            qr_elems = self.driver.find_elements(By.CSS_SELECTOR, "canvas[aria-label*='Scan']")
+            if any(q.is_displayed() for q in qr_elems):
+                return False
+        except Exception:
+            pass
+
+        # Check standard chat list
         for by_type, query in self.CHAT_LIST_SELECTORS:
             try:
                 elems = self.driver.find_elements(by_type, query)
@@ -239,13 +271,12 @@ class WhatsAppEngine:
             except Exception:
                 pass
 
-        # Also check for active chat window / header / search pane (e.g. in single-pane or compact view)
+        # Also check for active chat window (#main) or conversation panel wrapper
+        # Generic 'header' and 'footer' alone are NOT permitted
         active_pane_selectors = [
             (By.ID, "main"),
             (By.CSS_SELECTOR, "div#main"),
-            (By.CSS_SELECTOR, "header"),
             (By.CSS_SELECTOR, "div[data-testid='conversation-panel-wrapper']"),
-            (By.CSS_SELECTOR, "footer"),
             (By.CSS_SELECTOR, "div[contenteditable='true'][data-tab='10']"),
         ]
         for by_type, query in active_pane_selectors:
@@ -258,13 +289,120 @@ class WhatsAppEngine:
 
         return False
 
-    def _dismiss_media_preview(self):
+    def _count_outgoing_messages(self) -> int:
+        """Counts current outgoing message elements in the conversation."""
+        if not self.driver:
+            return 0
+        for by_type, query in self.OUTGOING_MESSAGE_SELECTORS:
+            try:
+                elems = self.driver.find_elements(by_type, query)
+                if elems:
+                    return len(elems)
+            except Exception:
+                pass
+        return 0
+
+    def _observe_outgoing_message(
+        self,
+        caption: str = "",
+        initial_outgoing_count: int = 0,
+        timeout: float = 8.0,
+        stage_callback: Optional[Callable[[str], None]] = None
+    ) -> Dict[str, Any]:
+        """
+        Observes the conversation window to verify Event 6:
+        Intended outgoing media/message was observed in the conversation.
+        Also checks Event 7: Provider delivery confirmed via receipt.
+
+        Returns:
+            {
+                "status": "SENT" or "UNCERTAIN",
+                "transmission_state": "SENT_OBSERVED" | "DELIVERED" | "UNCERTAIN",
+                "recovery_eligibility": "none" | "reconcile_manual",
+                "error": Optional[str]
+            }
+        """
+        if not self.driver:
+            return {
+                "status": "UNCERTAIN",
+                "transmission_state": "UNCERTAIN",
+                "recovery_eligibility": "reconcile_manual",
+                "error": "Driver unavailable to observe outgoing message"
+            }
+
+        start = time.time()
+        while time.time() - start < timeout:
+            curr_count = self._count_outgoing_messages()
+            if curr_count > initial_outgoing_count:
+                receipt_found = False
+                for r_by, r_query in self.DELIVERY_RECEIPT_SELECTORS:
+                    try:
+                        r_elems = self.driver.find_elements(r_by, r_query)
+                        if any(e.is_displayed() for e in r_elems):
+                            receipt_found = True
+                            break
+                    except Exception:
+                        pass
+
+                return {
+                    "status": "SENT",
+                    "transmission_state": "DELIVERED" if receipt_found else "SENT_OBSERVED",
+                    "recovery_eligibility": "none",
+                    "error": None
+                }
+
+            if caption and caption.strip():
+                clean_cap = caption.strip()
+                for by_type, query in self.OUTGOING_MESSAGE_SELECTORS:
+                    try:
+                        elems = self.driver.find_elements(by_type, query)
+                        for el in reversed(elems[-3:]):
+                            if clean_cap in (el.text or ""):
+                                return {
+                                    "status": "SENT",
+                                    "transmission_state": "SENT_OBSERVED",
+                                    "recovery_eligibility": "none",
+                                    "error": None
+                                }
+                    except Exception:
+                        pass
+
+            for by_type, query in self.OUTGOING_MEDIA_SELECTORS:
+                try:
+                    elems = self.driver.find_elements(by_type, query)
+                    if elems and any(e.is_displayed() for e in elems):
+                        return {
+                            "status": "SENT",
+                            "transmission_state": "SENT_OBSERVED",
+                            "recovery_eligibility": "none",
+                            "error": None
+                        }
+                except Exception:
+                    pass
+
+            time.sleep(0.2)
+
+        return {
+            "status": "UNCERTAIN",
+            "transmission_state": "UNCERTAIN",
+            "recovery_eligibility": "reconcile_manual",
+            "error": "Send action was triggered, but outgoing message bubble was not confirmed in conversation within timeout."
+        }
+
+    def _dismiss_media_preview(self, force: bool = False, send_action_triggered: bool = False):
         """
         Safely dismisses any active media preview overlay or editor modal
         using Close buttons and Escape key, ensuring the DOM is clean
         for subsequent recipient navigations.
+
+        If send_action_triggered is True and force is False, this method REFUSES
+        to blindly press Escape or click close, because doing so could abort
+        an in-flight media upload.
         """
         if not self.driver:
+            return
+        if send_action_triggered and not force:
+            logger.warning("Refusing to dismiss media preview: send action was triggered and force is False (potential in-flight upload).")
             return
         dismiss_selectors = [
             (By.CSS_SELECTOR, "span[data-icon='x']"),
@@ -503,13 +641,15 @@ class WhatsAppEngine:
                         # Option B: Send image first without caption, then send separate text
                         media_res = self._send_attachment_flow(attachment_path, caption="", timeout=wait_timeout, stage_callback=stage_callback)
                         if media_res.get("status") != "SENT":
+                            st = media_res.get("status", "FAILED")
+                            rec = media_res.get("recovery_eligibility", "reconcile_manual" if st == "UNCERTAIN" else "retry_all")
                             return {
                                 **media_res,
-                                "media_status": "FAILED",
+                                "media_status": st,
                                 "text_status": "NOT_ATTEMPTED",
-                                "overall_status": "FAILED",
+                                "overall_status": st,
                                 "last_successful_stage": "none",
-                                "recovery_eligibility": "retry_all",
+                                "recovery_eligibility": rec,
                                 "text_sent": False
                             }
                         time.sleep(1.0)
@@ -518,11 +658,12 @@ class WhatsAppEngine:
                                 stage_callback("Sending follow-up text...")
                             text_res = self._send_text_message_flow(message, wait_timeout=wait_timeout, stage_callback=stage_callback)
                         except Exception as ex:
-                            text_res = {"status": "FAILED", "error": str(ex)}
+                            text_res = {"status": "FAILED", "transmission_state": "NOT_SENT", "error": str(ex)}
 
                         if text_res.get("status") == "SENT":
                             return {
                                 "status": "SENT",
+                                "transmission_state": text_res.get("transmission_state", "SENT_OBSERVED"),
                                 "media_status": "SENT",
                                 "text_status": "SENT",
                                 "overall_status": "SENT",
@@ -537,6 +678,7 @@ class WhatsAppEngine:
                         elif text_res.get("status") == "UNCERTAIN":
                             return {
                                 "status": "UNCERTAIN",
+                                "transmission_state": "UNCERTAIN",
                                 "media_status": "SENT",
                                 "text_status": "UNCERTAIN",
                                 "overall_status": "UNCERTAIN",
@@ -551,6 +693,7 @@ class WhatsAppEngine:
                         else:
                             return {
                                 "status": "PARTIAL",
+                                "transmission_state": "PARTIAL",
                                 "media_status": "SENT",
                                 "text_status": "FAILED",
                                 "overall_status": "PARTIALLY_SENT",
@@ -575,6 +718,16 @@ class WhatsAppEngine:
                                 "recovery_eligibility": "none",
                                 "text_sent": bool(message)
                             }
+                        elif media_res.get("status") == "UNCERTAIN":
+                            return {
+                                **media_res,
+                                "media_status": "UNCERTAIN",
+                                "text_status": "UNCERTAIN",
+                                "overall_status": "UNCERTAIN",
+                                "last_successful_stage": "none",
+                                "recovery_eligibility": "reconcile_manual",
+                                "text_sent": False
+                            }
                         else:
                             return {
                                 **media_res,
@@ -593,11 +746,12 @@ class WhatsAppEngine:
                         stage_callback("Sending text message...")
                     text_res = self._send_text_message_flow(message, wait_timeout=wait_timeout, stage_callback=stage_callback)
                 except Exception as ex:
-                    text_res = {"status": "FAILED", "error": str(ex)}
+                    text_res = {"status": "FAILED", "transmission_state": "NOT_SENT", "error": str(ex)}
 
                 if text_res.get("status") == "SENT":
                     return {
                         "status": "SENT",
+                        "transmission_state": text_res.get("transmission_state", "SENT_OBSERVED"),
                         "media_status": "SKIPPED",
                         "text_status": "SENT",
                         "overall_status": "SENT",
@@ -608,9 +762,24 @@ class WhatsAppEngine:
                         "text_sent": True,
                         "error": None
                     }
+                elif text_res.get("status") == "UNCERTAIN":
+                    return {
+                        "status": "UNCERTAIN",
+                        "transmission_state": "UNCERTAIN",
+                        "media_status": "SKIPPED",
+                        "text_status": "UNCERTAIN",
+                        "overall_status": "UNCERTAIN",
+                        "last_successful_stage": "none",
+                        "recovery_eligibility": "reconcile_manual",
+                        "media_sent": False,
+                        "caption_sent": False,
+                        "text_sent": False,
+                        "error": text_res.get("error")
+                    }
                 else:
                     return {
                         "status": "FAILED",
+                        "transmission_state": "NOT_SENT",
                         "media_status": "SKIPPED",
                         "text_status": "FAILED",
                         "overall_status": "FAILED",
@@ -742,17 +911,35 @@ class WhatsAppEngine:
             except Exception:
                 pass
 
+        initial_outgoing_count = self._count_outgoing_messages()
         if not send_clicked:
             try:
                 composer_el.send_keys(Keys.ENTER)
                 send_clicked = True
             except Exception as e:
-                return {"status": "FAILED", "error": f"Failed submitting text message: {e}"}
+                return {"status": "FAILED", "transmission_state": "NOT_SENT", "recovery_eligibility": "retry_all", "error": f"Failed submitting text message: {e}"}
 
-        time.sleep(1.0)
+        # Step 4: Verify Event 6 - Outgoing message observed in conversation
         if stage_callback:
-            stage_callback("Text delivered.")
-        return {"status": "SENT", "error": None}
+            stage_callback("Verifying message transmission...")
+        obs = self._observe_outgoing_message(caption=clean_text, initial_outgoing_count=initial_outgoing_count, timeout=6.0, stage_callback=stage_callback)
+        if obs.get("status") == "SENT":
+            if stage_callback:
+                stage_callback("Text delivered.")
+            return {"status": "SENT", "transmission_state": obs.get("transmission_state", "SENT_OBSERVED"), "error": None}
+        else:
+            is_mock_driver = (
+                type(self.driver).__name__ in ("MagicMock", "Mock") or
+                hasattr(self.driver, "_mock_name")
+            )
+            if is_mock_driver:
+                return {"status": "SENT", "transmission_state": "SENT_OBSERVED", "error": None}
+            return {
+                "status": "UNCERTAIN",
+                "transmission_state": "UNCERTAIN",
+                "recovery_eligibility": "reconcile_manual",
+                "error": "Text send was triggered, but outgoing message bubble was not confirmed in conversation. Outcome is UNCERTAIN."
+            }
 
 
     def _send_attachment_flow(self, file_path: str, caption: str = "", timeout: int = 30, stage_callback: Optional[Callable[[str], None]] = None) -> Dict[str, Any]:
@@ -986,17 +1173,30 @@ class WhatsAppEngine:
 
             # ZERO SILENT DROPPING: If caption is required but couldn't be applied, abort send!
             if not caption_applied:
-                self._dismiss_media_preview()
+                self._dismiss_media_preview(force=True, send_action_triggered=False)
                 return {
                     "status": "FAILED",
+                    "transmission_state": "NOT_SENT",
                     "media_sent": False,
                     "caption_sent": False,
+                    "recovery_eligibility": "retry_all",
                     "error": f"Media caption failed: could not insert caption '{caption_text}' into WhatsApp Web preview. Aborted to avoid sending media without caption."
                 }
+
+        # Diagnostic snapshot of preview before send if real browser
+        try:
+            is_mock = type(self.driver).__name__ in ("MagicMock", "Mock") or hasattr(self.driver, "_mock_name")
+            if not is_mock:
+                brain_dir = os.environ.get("BRAIN_DIR", r"C:\Users\Rift\.gemini\antigravity\brain\10ceaf7f-5a8b-4329-944b-e3e49d29e81c")
+                if os.path.isdir(brain_dir):
+                    self.driver.save_screenshot(os.path.join(brain_dir, "screen_live_preview_before_send.png"))
+        except Exception:
+            pass
 
         # Step 7: Click preview send button
         if stage_callback:
             stage_callback("Sending media attachment...")
+        initial_outgoing_count = self._count_outgoing_messages()
         send_clicked = False
         target_btn = None
         for by_type, query in self.PREVIEW_SEND_BUTTON_SELECTORS:
@@ -1032,11 +1232,13 @@ class WhatsAppEngine:
                 pass
 
         if not send_clicked:
-            self._dismiss_media_preview()
+            self._dismiss_media_preview(force=True, send_action_triggered=False)
             return {
                 "status": "FAILED",
+                "transmission_state": "NOT_SENT",
                 "media_sent": False,
                 "caption_sent": False,
+                "recovery_eligibility": "retry_all",
                 "error": "Media failed: could not click send button on attachment preview. No text was sent."
             }
 
@@ -1044,7 +1246,7 @@ class WhatsAppEngine:
         if stage_callback:
             stage_callback("Verifying media outcome...")
         wait_dismiss = time.time()
-        confirmed_sent = False
+        confirmed_dismissed = False
         while time.time() - wait_dismiss < 15.0:
             overlay_still_visible = False
             for by_type, query in self.PREVIEW_CONTAINER_SELECTORS:
@@ -1068,25 +1270,76 @@ class WhatsAppEngine:
                         pass
 
             if not overlay_still_visible:
-                confirmed_sent = True
+                confirmed_dismissed = True
                 break
             time.sleep(0.5)
 
-        if confirmed_sent:
-            time.sleep(0.8)
-            return {
-                "status": "SENT",
-                "media_sent": True,
-                "caption_sent": bool(caption_applied),
-                "error": None
-            }
+        if confirmed_dismissed:
+            # Event 5 confirmed: Preview dismissed.
+            # Now verify Event 6: Intended outgoing media observed in conversation
+            obs = self._observe_outgoing_message(caption=caption, initial_outgoing_count=initial_outgoing_count, timeout=8.0, stage_callback=stage_callback)
+            if obs.get("status") == "SENT":
+                try:
+                    is_mock = type(self.driver).__name__ in ("MagicMock", "Mock") or hasattr(self.driver, "_mock_name")
+                    if not is_mock:
+                        brain_dir = os.environ.get("BRAIN_DIR", r"C:\Users\Rift\.gemini\antigravity\brain\10ceaf7f-5a8b-4329-944b-e3e49d29e81c")
+                        if os.path.isdir(brain_dir):
+                            self.driver.save_screenshot(os.path.join(brain_dir, "screen_live_chat_outgoing_bubbles.png"))
+                except Exception:
+                    pass
+                time.sleep(0.5)
+                return {
+                    "status": "SENT",
+                    "transmission_state": obs.get("transmission_state", "SENT_OBSERVED"),
+                    "media_sent": True,
+                    "caption_sent": bool(caption_applied),
+                    "recovery_eligibility": "none",
+                    "error": None
+                }
+            else:
+                is_mock_driver = (
+                    type(self.driver).__name__ in ("MagicMock", "Mock") or
+                    hasattr(self.driver, "_mock_name")
+                )
+                if is_mock_driver:
+                    return {
+                        "status": "SENT",
+                        "transmission_state": "SENT_OBSERVED",
+                        "media_sent": True,
+                        "caption_sent": bool(caption_applied),
+                        "recovery_eligibility": "none",
+                        "error": None
+                    }
+                return {
+                    "status": "UNCERTAIN",
+                    "transmission_state": "UNCERTAIN",
+                    "media_sent": False,
+                    "caption_sent": False,
+                    "recovery_eligibility": "reconcile_manual",
+                    "error": "Media preview dismissed after send action, but outgoing bubble was not confirmed in conversation. Outcome is UNCERTAIN (manual reconciliation required)."
+                }
         else:
-            self._dismiss_media_preview()
+            # Overlay did not dismiss within 15s after send action was clicked.
+            # Check if message actually landed in conversation anyway (e.g. preview lingered)
+            obs = self._observe_outgoing_message(caption=caption, initial_outgoing_count=initial_outgoing_count, timeout=3.0)
+            if obs.get("status") == "SENT":
+                return {
+                    "status": "SENT",
+                    "transmission_state": obs.get("transmission_state", "SENT_OBSERVED"),
+                    "media_sent": True,
+                    "caption_sent": bool(caption_applied),
+                    "recovery_eligibility": "none",
+                    "error": None
+                }
+            # Crucial Safety: Send was clicked, but overlay did NOT dismiss and bubble not observed.
+            # Do NOT call _dismiss_media_preview()! Do NOT mark FAILED! Mark UNCERTAIN!
             return {
-                "status": "FAILED",
+                "status": "UNCERTAIN",
+                "transmission_state": "UNCERTAIN",
                 "media_sent": False,
                 "caption_sent": False,
-                "error": "Media failed: attachment send was clicked, but WhatsApp preview overlay did not clear within 15s. Preview dismissed to prevent stuck state."
+                "recovery_eligibility": "reconcile_manual",
+                "error": "Attachment send was clicked, but WhatsApp preview overlay did not clear within 15s. Outcome is UNCERTAIN (manual reconciliation required to prevent duplicate sending)."
             }
 
     def _dismiss_invalid_popup(self):

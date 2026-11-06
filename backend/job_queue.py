@@ -586,10 +586,10 @@ class BackgroundJobWorker:
                     if self._active_job and self._active_job.get("id") == job_id:
                         self._active_job["current_recipient"] = f"{recipient_name} (+{masked})"
 
-                # Clean up any leftover preview before recipient dispatch
+                # Clean up any leftover preview before recipient dispatch (only if safe/not actively triggered)
                 try:
                     if hasattr(provider, "_engine") and provider._engine and hasattr(provider._engine, "_dismiss_media_preview"):
-                        provider._engine._dismiss_media_preview()
+                        provider._engine._dismiss_media_preview(force=False, send_action_triggered=False)
                 except Exception:
                     pass
 
@@ -664,10 +664,10 @@ class BackgroundJobWorker:
                         res = {"status": "FAILED", "error": str(e)}
 
                     status = res.get("status")
-                    if status != "SENT":
+                    if status != "SENT" and status != "UNCERTAIN":
                         try:
                             if hasattr(provider, "_engine") and provider._engine and hasattr(provider._engine, "_dismiss_media_preview"):
-                                provider._engine._dismiss_media_preview()
+                                provider._engine._dismiss_media_preview(force=True, send_action_triggered=False)
                         except Exception:
                             pass
                     if status == "SENT":
@@ -775,6 +775,19 @@ class BackgroundJobWorker:
                         )
                         failed_count += 1
                         log_event(f"  -> Transmission unconfirmed for +{masked}: marked UNCERTAIN to prevent duplicate send.", "WARNING")
+                        if not use_mock:
+                            log_event(f"  -> Campaign paused on UNCERTAIN outcome for +{masked}. Safe browser state / manual reconciliation required before next recipient.", "WARNING")
+                            self._is_paused = True
+                            with self._lock:
+                                if self._active_job and self._active_job.get("id") == job_id:
+                                    self._active_job["status"] = "PAUSED"
+                            db.update_job_status(job_id, "PAUSED")
+                            self._broadcast({
+                                "type": "job_paused",
+                                "job_id": job_id,
+                                "status": "PAUSED",
+                                "reason": f"Uncertain transmission for {recipient_name} (+{masked}). Campaign paused to protect against duplicate messaging."
+                            })
                         break
                     else:
                         last_error = res.get("error") or "Transmission failed"
@@ -868,7 +881,7 @@ class BackgroundJobWorker:
             with self._lock:
                 current_status = self._active_job.get("status") if self._active_job else "COMPLETED"
 
-            final_status = "CANCELLED" if (self._is_stopped or current_status == "CANCELLED") else "COMPLETED"
+            final_status = "CANCELLED" if (self._is_stopped or current_status == "CANCELLED") else ("PAUSED" if current_status == "PAUSED" else "COMPLETED")
             db.update_job_status(job_id, final_status)
             log_event(f"Job {job_id} concluded with status {final_status} (Sent: {sent_count}, Failed: {failed_count})", "INFO")
 
@@ -888,6 +901,11 @@ class BackgroundJobWorker:
             logger.error(f"Job {job_id} encountered fatal worker error: {e}")
             db.update_job_status(job_id, "FAILED", error_message=str(e))
             log_event(f"Job {job_id} failed fatally: {e}", "ERROR")
+            try:
+                if 'item' in locals() and item and item.get("id"):
+                    db.update_queue_item_status(item["id"], "UNCERTAIN", error_message=f"Worker crashed during dispatch: {e}", recovery_eligibility="reconcile_manual")
+            except Exception:
+                pass
             with self._lock:
                 if self._active_job and self._active_job.get("id") == job_id:
                     self._active_job["status"] = "FAILED"

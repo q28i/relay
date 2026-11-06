@@ -96,18 +96,27 @@ def test_4_is_logged_in_detects_chat_and_active_pane():
     assert engine.is_logged_in() is True
 
 
-def test_5_media_send_verification_stuck_preview_fails_and_dismisses(temp_image):
-    """5. When send button remains visible (stuck preview), flow fails and dismisses preview."""
+def test_5_media_send_verification_stuck_preview_marks_uncertain_and_protects_upload(temp_image):
+    """5. When send button is clicked but preview remains stuck, outcome is UNCERTAIN and blind dismiss is prevented."""
     mock_driver = MagicMock()
     engine = WhatsAppEngine(mock_driver, headless=True)
 
     # File input found
     mock_input = MagicMock()
     mock_input.get_attribute.return_value = "image/*"
-    mock_driver.find_elements.side_effect = lambda by, q: [mock_input] if "input" in q else []
+
+    call_count = [0]
+    def mock_time():
+        call_count[0] += 1
+        if call_count[0] <= 2:
+            return 0.1 * call_count[0]
+        elif call_count[0] == 3:
+            return 1.0
+        else:
+            return 25.0 + call_count[0]
 
     with patch.object(engine, "_dismiss_media_preview") as mock_dismiss, \
-         patch("time.time", side_effect=[0, 1, 2, 3, 20, 21, 22]):
+         patch("time.time", side_effect=mock_time):
         # Mock preview container found
         mock_container = MagicMock()
         mock_container.is_displayed.return_value = True
@@ -127,9 +136,11 @@ def test_5_media_send_verification_stuck_preview_fails_and_dismisses(temp_image)
         mock_driver.find_elements.side_effect = custom_find
 
         res = engine._send_attachment_flow(temp_image, caption="", timeout=2)
-        assert res["status"] == "FAILED"
+        assert res["status"] == "UNCERTAIN"
+        assert res["transmission_state"] == "UNCERTAIN"
+        assert res["recovery_eligibility"] == "reconcile_manual"
         assert res["media_sent"] is False
-        assert mock_dismiss.called
+        assert not mock_dismiss.called
 
 
 def test_6_zero_text_fallback_on_media_failure_in_caption_mode(temp_image):
@@ -419,3 +430,178 @@ def test_15_partial_send_preserves_delivered_media_zero_duplicate(temp_image):
         assert res["text_sent"] is True
         # Media attachment flow must NOT be called on text_only stage!
         assert not mock_att_flow.called
+
+
+def test_16_four_tier_outcome_model_states(temp_image):
+    """16. WhatsAppEngine cleanly produces NOT_SENT, SENT_OBSERVED, UNCERTAIN, and DELIVERED states."""
+    mock_driver = MagicMock()
+    engine = WhatsAppEngine(mock_driver, headless=True)
+
+    # 1. NOT_SENT: missing file
+    res_not_sent = engine.send_message(phone="919999988888", message="Hello", attachment_path="missing_file.jpg")
+    assert res_not_sent["status"] == "FAILED"
+    assert res_not_sent.get("recovery_eligibility") == "retry_all"
+
+    # 2. SENT_OBSERVED & DELIVERED
+    mock_msg_out = MagicMock()
+    mock_msg_out.is_displayed.return_value = True
+    mock_check = MagicMock()
+    mock_check.is_displayed.return_value = True
+
+    # With delivery receipt: DELIVERED
+    def find_elems_delivered(by, query):
+        if "msg-check" in query or "msg-dblcheck" in query:
+            return [mock_check]
+        if "message-out" in query:
+            return [mock_msg_out, mock_msg_out]
+        return []
+
+    mock_driver.find_elements.side_effect = find_elems_delivered
+    obs_del = engine._observe_outgoing_message(caption="", initial_outgoing_count=1, timeout=0.1)
+    assert obs_del["status"] == "SENT"
+    assert obs_del["transmission_state"] == "DELIVERED"
+    assert obs_del["recovery_eligibility"] == "none"
+
+    # Without delivery receipt: SENT_OBSERVED
+    def find_elems_observed(by, query):
+        if "msg-check" in query or "msg-dblcheck" in query:
+            return []
+        if "message-out" in query:
+            return [mock_msg_out, mock_msg_out]
+        return []
+
+    mock_driver.find_elements.side_effect = find_elems_observed
+    obs_obs = engine._observe_outgoing_message(caption="", initial_outgoing_count=1, timeout=0.1)
+    assert obs_obs["status"] == "SENT"
+    assert obs_obs["transmission_state"] == "SENT_OBSERVED"
+    assert obs_obs["recovery_eligibility"] == "none"
+
+    # 3. UNCERTAIN: outgoing count not increased within timeout
+    class DummyRealWebDriver:
+        def find_elements(self, by, query):
+            return []
+
+    dummy_driver = DummyRealWebDriver()
+    engine_real = WhatsAppEngine(dummy_driver, headless=True)
+
+    with patch("time.time", side_effect=[0, 0.5, 1.0, 10.0, 11.0]):
+        obs_unc = engine_real._observe_outgoing_message(caption="test", initial_outgoing_count=1, timeout=1.0)
+        assert obs_unc["status"] == "UNCERTAIN"
+        assert obs_unc["transmission_state"] == "UNCERTAIN"
+        assert obs_unc["recovery_eligibility"] == "reconcile_manual"
+
+
+def test_17_safe_cleanup_refuses_destructive_dismiss_after_send_action():
+    """17. _dismiss_media_preview refuses to dismiss when send action was triggered and force is False."""
+    mock_driver = MagicMock()
+    mock_btn = MagicMock()
+    mock_btn.is_displayed.return_value = True
+    mock_driver.find_elements.return_value = [mock_btn]
+    mock_active = MagicMock()
+    mock_driver.switch_to.active_element = mock_active
+
+    engine = WhatsAppEngine(mock_driver, headless=True)
+
+    # When send_action_triggered=True and force=False -> REFUSE dismiss
+    engine._dismiss_media_preview(force=False, send_action_triggered=True)
+    assert not mock_btn.click.called
+    assert not mock_active.send_keys.called
+
+    # When force=True -> ALLOW dismiss
+    engine._dismiss_media_preview(force=True, send_action_triggered=True)
+    assert mock_btn.click.called or mock_driver.execute_script.called
+    assert mock_active.send_keys.called
+
+
+def test_18_generic_header_footer_alone_do_not_establish_authentication():
+    """18. Generic header and footer alone never establish WhatsApp authentication."""
+    mock_driver = MagicMock()
+    mock_driver.current_url = "https://web.whatsapp.com"
+    engine = WhatsAppEngine(mock_driver, headless=True)
+
+    mock_elem = MagicMock()
+    mock_elem.is_displayed.return_value = True
+
+    # Page with only generic header and footer tags
+    def find_elems_generic(by, query):
+        if query in ("header", "footer"):
+            return [mock_elem]
+        return []
+
+    mock_driver.find_elements.side_effect = find_elems_generic
+    assert engine.is_logged_in() is False
+
+    # Page with QR canvas visible
+    mock_qr = MagicMock()
+    mock_qr.is_displayed.return_value = True
+
+    def find_elems_qr(by, query):
+        if "Scan" in query:
+            return [mock_qr]
+        if "side" in query:
+            return [mock_elem]
+        return []
+
+    mock_driver.find_elements.side_effect = find_elems_qr
+    assert engine.is_logged_in() is False
+
+
+def test_19_job_queue_pauses_on_uncertain_outcome_and_protects_subsequent_recipients():
+    """19. When a recipient outcome is UNCERTAIN, JobQueue pauses rather than advancing blindly."""
+    jq = JobQueue()
+    recipients = [
+        {"phone": "919000000051", "name": "Uncertain Contact"},
+        {"phone": "919000000052", "name": "Protected Contact"},
+    ]
+
+    mock_provider = MockWhatsAppEngine()
+
+    def uncertain_send(**kwargs):
+        return {
+            "status": "UNCERTAIN",
+            "transmission_state": "UNCERTAIN",
+            "media_status": "UNCERTAIN",
+            "text_status": "UNCERTAIN",
+            "overall_status": "UNCERTAIN",
+            "recovery_eligibility": "reconcile_manual",
+            "error": "Preview overlay remained stuck. Outcome unconfirmed."
+        }
+
+    mock_provider.send_message = uncertain_send
+
+    # Run with use_mock=False to test production safety guard
+    # We patch connection_monitor so it considers it connected
+    with patch("backend.connection_monitor.connection_monitor.is_connected", return_value=True):
+        job = jq.start_campaign_job(
+            campaign_name="Test Uncertain Pauses Campaign",
+            contacts=recipients,
+            template_content="Hello {name}",
+            min_delay=0.01,
+            max_delay=0.02,
+            use_mock=False,
+            provider=mock_provider
+        )
+
+        timeout = 5.0
+        start = time.time()
+        while time.time() - start < timeout:
+            active = jq.get_active_job()
+            if not active or active.get("status") in ("PAUSED", "COMPLETED", "FAILED", "CANCELLED"):
+                break
+            time.sleep(0.05)
+
+        # Job must be PAUSED
+        db_job = db.get_job(job["id"])
+        assert db_job["status"] == "PAUSED"
+
+        # First contact is marked UNCERTAIN
+        items = db.get_queue_items(job_id=job["id"])
+        assert len(items) == 2
+        item_1 = next(it for it in items if it["recipient_phone"] == "919000000051")
+        item_2 = next(it for it in items if it["recipient_phone"] == "919000000052")
+
+        assert item_1["status"] == "UNCERTAIN"
+        assert item_1["recovery_eligibility"] == "reconcile_manual"
+        # Second contact was NEVER dispatched because campaign paused to protect against duplicate send
+        assert item_2["status"] == "PENDING"
+
