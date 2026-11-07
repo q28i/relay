@@ -100,8 +100,18 @@ class RelayUpdaterService:
             "Accept": "application/vnd.github.v3+json",
         }
 
-        # If user configured a GITHUB_TOKEN or GH_TOKEN in env, use it to avoid rate-limiting
+        # If user configured a GITHUB_TOKEN or GH_TOKEN in env, or has gh CLI logged in, use it
         gh_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+        if not gh_token:
+            try:
+                import shutil
+                if shutil.which("gh"):
+                    res = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, timeout=2)
+                    if res.returncode == 0 and res.stdout.strip():
+                        gh_token = res.stdout.strip()
+            except Exception:
+                pass
+
         if gh_token:
             headers["Authorization"] = f"Bearer {gh_token}"
 
