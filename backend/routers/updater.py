@@ -14,6 +14,10 @@ from backend.job_queue import job_worker
 router = APIRouter(prefix="/api/updates", tags=["Application Updates"])
 
 
+class CheckUpdateRequest(BaseModel):
+    channel: Optional[str] = None
+
+
 class DownloadUpdateRequest(BaseModel):
     download_url: Optional[str] = None
 
@@ -24,14 +28,15 @@ class ApplyUpdateRequest(BaseModel):
 
 @router.get("/status")
 def get_update_status():
-    """Returns the current application version and update engine state."""
+    """Returns the current application version, active channel, and update engine state."""
     return relay_updater.get_status()
 
 
 @router.post("/check")
-def check_for_updates():
-    """Queries GitHub Releases API for the latest published release."""
-    result = relay_updater.check_for_updates()
+def check_for_updates(req: Optional[CheckUpdateRequest] = None):
+    """Queries GitHub Releases API for the latest release on the target or active channel."""
+    channel = req.channel if req else None
+    result = relay_updater.check_for_updates(channel=channel)
     return result
 
 
@@ -50,7 +55,7 @@ def download_update(req: DownloadUpdateRequest, background_tasks: BackgroundTask
 def apply_update(req: ApplyUpdateRequest):
     """
     Applies the downloaded update.
-    Rejects immediately if an active campaign is running to protect dispatches.
+    Rejects immediately if an active campaign is running or paused to protect dispatches.
     """
     if job_worker.get_active_job():
         raise HTTPException(
@@ -60,6 +65,6 @@ def apply_update(req: ApplyUpdateRequest):
 
     success, msg = relay_updater.trigger_update_installer(silent=req.silent)
     if not success:
-        raise HTTPException(status_code=400, detail=msg)
+        raise HTTPException(status_code=409 if "campaign" in msg.lower() else 400, detail=msg)
 
     return {"status": "applied", "message": msg}

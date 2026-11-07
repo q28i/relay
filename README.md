@@ -17,9 +17,13 @@ Comprehensive architectural specifications, incident post-mortems, testing runbo
 - **[WhatsApp Media Pipeline (`docs/WHATSAPP_MEDIA_PIPELINE.md`)](docs/WHATSAPP_MEDIA_PIPELINE.md)**: Forensic history of the Sticker Bug, dynamic file input interception via `HTMLInputElement.prototype.click`, and zero-silent-drop caption enforcement.
 - **[Dispatch Engine (`docs/DISPATCH_ENGINE.md`)](docs/DISPATCH_ENGINE.md)**: Campaign creation, anti-ban pacing jitter, session locking, durable queue recovery, and failure isolation.
 - **[Browser Session Management (`docs/BROWSER_SESSIONS.md`)](docs/BROWSER_SESSIONS.md)**: Persistent dedicated session (`whatsapp_browser_session/`), Chromium 136+ compatibility, cached driver resolution, and conflict resolution.
+- **[Device Identity & Diagnostics (`docs/DEVICE_IDENTITY.md`)](docs/DEVICE_IDENTITY.md)**: Persistent UUIDv4 installation ID, local hardware diagnostics, privacy redaction, and developer enrollment.
+- **[Update Channels & Targeted Rollouts (`docs/UPDATE_CHANNELS.md`)](docs/UPDATE_CHANNELS.md)**: Stable/Beta/Dev release streams, SemVer 2.0.0 model, targeted developer rollouts, and SQLite campaign protection.
+- **[Portability Audit (`docs/PORTABILITY_AUDIT.md`)](docs/PORTABILITY_AUDIT.md)**: Forensic audit of clean-PC assumptions, missing runtimes, driver caching, and network isolation.
+- **[Compatibility Matrix (`docs/COMPATIBILITY_MATRIX.md`)](docs/COMPATIBILITY_MATRIX.md)**: 18-environment matrix across Windows 10/11 editions, runtimes, and browsers.
 - **[Incident History & Defect Ledger (`docs/INCIDENT_HISTORY.md`)](docs/INCIDENT_HISTORY.md)**: Chronological record of 17 historical engineering defects, root causes, and verified fixes.
 - **[Operator & User Guide (`docs/USER_GUIDE.md`)](docs/USER_GUIDE.md)**: Step-by-step instructions for importing contacts, building templates, launching campaigns, and monitoring activity.
-- **[Testing & Verification Framework (`docs/TESTING.md`)](docs/TESTING.md)**: Test suite organization, database isolation, 247 passing automated tests, and regression checklists.
+- **[Testing & Verification Framework (`docs/TESTING.md`)](docs/TESTING.md)**: Test suite organization, database isolation, automated tests, and regression checklists.
 - **[Security & Safety Policy (`docs/SECURITY.md`)](docs/SECURITY.md)**: Local credential boundaries, phone number privacy masking, opt-out suppression, and anti-ban limits.
 
 ---

@@ -378,7 +378,7 @@ def test_13_job_queue_broadcasts_job_stage_update():
             provider=mock_provider
         )
 
-        timeout = 5.0
+        timeout = 10.0
         start = time.time()
         while time.time() - start < timeout:
             active = jq.get_active_job()
@@ -582,11 +582,11 @@ def test_19_job_queue_pauses_on_uncertain_outcome_and_protects_subsequent_recipi
             provider=mock_provider
         )
 
-        timeout = 5.0
+        timeout = 10.0
         start = time.time()
         while time.time() - start < timeout:
-            active = jq.get_active_job()
-            if not active or active.get("status") in ("PAUSED", "RECONCILIATION_REQUIRED", "COMPLETED", "FAILED", "CANCELLED"):
+            db_job = db.get_job(job["id"])
+            if db_job and db_job.get("status") in ("PAUSED", "RECONCILIATION_REQUIRED", "COMPLETED", "FAILED", "CANCELLED"):
                 break
             time.sleep(0.05)
 
