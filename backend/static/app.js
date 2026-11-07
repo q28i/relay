@@ -5398,6 +5398,7 @@ class WhatsAppDashboardApp {
       }
       await this.loadBrowserConnection();
       await this.loadUpdateStatus();
+      await this.loadDeviceInfo();
     } catch (e) {}
   }
 
@@ -5435,7 +5436,8 @@ class WhatsAppDashboardApp {
     }
 
     try {
-      const res = await this.api('/api/updates/check', { method: 'POST' });
+      const chan = document.getElementById('select-update-channel')?.value || 'stable';
+      const res = await this.api('/api/updates/check', { method: 'POST', body: { channel: chan } });
       const box = document.getElementById('update-status-box');
       const title = document.getElementById('update-status-title');
       const desc = document.getElementById('update-status-desc');
@@ -5448,7 +5450,8 @@ class WhatsAppDashboardApp {
       box.style.display = 'block';
 
       if (res.has_update) {
-        if (title) title.textContent = `New Version Available: ${res.tag_name}`;
+        const chanLabel = res.release_channel && res.release_channel !== 'stable' ? ` [${res.release_channel.toUpperCase()}]` : '';
+        if (title) title.textContent = `New Version Available: ${res.tag_name}${chanLabel}`;
         if (desc) desc.textContent = `A newer release (${res.tag_name}) is published on GitHub.`;
         if (btnDl) {
           btnDl.style.display = 'inline-block';
@@ -5548,6 +5551,231 @@ class WhatsAppDashboardApp {
       if (btn) btn.disabled = false;
       this.showToast(e.message || 'Failed to launch update installer', 'error');
     }
+  }
+
+  async loadDeviceInfo() {
+    try {
+      const data = await this.api('/api/device/info', { silent: true });
+      if (!data) return;
+      this.deviceInfo = data;
+
+      const ident = data.identity || {};
+      const sys = data.system || {};
+      const appInfo = data.application || {};
+      const browser = data.browser || {};
+
+      // Badges
+      const roleBadge = document.getElementById('device-role-badge');
+      if (roleBadge) {
+        if (ident.device_role === 'developer') {
+          roleBadge.textContent = 'Developer Workstation';
+          roleBadge.className = 'badge badge-primary';
+          roleBadge.style.background = '#8b5cf6';
+          roleBadge.style.color = '#ffffff';
+        } else {
+          roleBadge.textContent = 'Standard';
+          roleBadge.className = 'badge';
+          roleBadge.style.background = 'var(--surface-subtle)';
+          roleBadge.style.color = 'var(--text-muted)';
+        }
+      }
+
+      const chanBadge = document.getElementById('device-channel-badge');
+      if (chanBadge) {
+        chanBadge.textContent = (ident.update_channel || 'stable').toUpperCase();
+        if (ident.update_channel === 'dev') {
+          chanBadge.className = 'badge badge-warning';
+        } else if (ident.update_channel === 'beta') {
+          chanBadge.className = 'badge badge-secondary';
+        } else {
+          chanBadge.className = 'badge badge-success';
+        }
+      }
+
+      // Installation ID & Label
+      const idEl = document.getElementById('device-install-id');
+      if (idEl) idEl.textContent = ident.installation_id || 'Unknown';
+
+      const labelInput = document.getElementById('input-device-label');
+      if (labelInput && !labelInput.matches(':focus')) {
+        labelInput.value = ident.device_label || '';
+      }
+
+      const hostUserEl = document.getElementById('device-host-user-text');
+      if (hostUserEl) {
+        hostUserEl.textContent = `${ident.device_label || ''} (${sys.os_name || 'Windows'} · User: ${appInfo.execution_mode || ''})`;
+      }
+
+      // Channel selector
+      const chanSelect = document.getElementById('select-update-channel');
+      if (chanSelect) {
+        chanSelect.value = ident.update_channel || 'stable';
+      }
+
+      // Developer registration button text
+      const devBtn = document.getElementById('btn-toggle-developer-reg');
+      if (devBtn) {
+        if (ident.device_role === 'developer') {
+          devBtn.textContent = 'Revert to Standard Role';
+          devBtn.className = 'btn btn-secondary btn-sm';
+        } else {
+          devBtn.textContent = 'Register as Developer';
+          devBtn.className = 'btn btn-primary btn-sm';
+        }
+      }
+
+      // Specs
+      const setSpec = (id, text) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = text;
+      };
+
+      setSpec('spec-os', `${sys.os_name || 'Windows'} ${sys.os_release || ''} (${sys.cpu_arch || 'x64'})`);
+      setSpec('spec-cpu', `${sys.cpu_model || 'Processor'} (${sys.cpu_logical_cores || 1} cores)`);
+      setSpec('spec-ram', `${sys.available_ram_gb || 0} GB free / ${sys.total_ram_gb || 0} GB`);
+      setSpec('spec-disk', `${sys.free_disk_gb || 0} GB free / ${sys.total_disk_gb || 0} GB`);
+      setSpec('spec-mode', appInfo.execution_mode || 'Desktop');
+      setSpec('spec-commit', appInfo.git_commit ? `git-${appInfo.git_commit}` : 'v2.0.0');
+      setSpec('spec-elevation', appInfo.elevation || 'Standard User');
+
+      const browsersList = (browser.installed_browsers || []).map(b => b.name || b.key).join(', ') || 'Chrome';
+      setSpec('spec-browsers', browsersList);
+
+    } catch (e) {
+      console.warn('Failed to load device info:', e);
+    }
+  }
+
+  copyInstallationId() {
+    const idEl = document.getElementById('device-install-id');
+    const val = idEl ? idEl.textContent.trim() : '';
+    if (!val || val === 'Loading...') return;
+    navigator.clipboard.writeText(val).then(() => {
+      this.showToast('Installation ID copied to clipboard!', 'success');
+    }).catch(() => {
+      this.showToast('Could not access clipboard', 'error');
+    });
+  }
+
+  async saveDeviceLabel() {
+    const input = document.getElementById('input-device-label');
+    const val = input ? input.value.trim() : '';
+    if (!val) {
+      this.showToast('Device label cannot be empty', 'error');
+      return;
+    }
+    try {
+      const res = await this.api('/api/device/label', { method: 'POST', body: { label: val } });
+      this.showToast('Device label updated successfully', 'success');
+      await this.loadDeviceInfo();
+    } catch (e) {
+      this.showToast(e.message || 'Failed to update label', 'error');
+    }
+  }
+
+  async changeUpdateChannel(channel) {
+    try {
+      await this.api('/api/device/channel', { method: 'POST', body: { channel } });
+      this.showToast(`Update channel set to: ${channel.toUpperCase()}`, 'info');
+      await this.loadDeviceInfo();
+      await this.checkForUpdates();
+    } catch (e) {
+      this.showToast(e.message || 'Failed to change update channel', 'error');
+    }
+  }
+
+  async toggleDeveloperRegistration() {
+    const isDev = this.deviceInfo?.identity?.device_role === 'developer';
+    if (isDev) {
+      const ok = await this.confirmDialog({
+        title: 'Revert to Standard Role',
+        message: 'Reverting will remove developer workstation enrollment and switch update channel back to Stable.',
+        details: 'You can re-enroll as a development device at any time.',
+        confirmText: 'Revert Role',
+        isDestructive: false
+      });
+      if (!ok) return;
+      try {
+        await this.api('/api/device/unregister-developer', { method: 'POST' });
+        this.showToast('Device reverted to Standard role', 'info');
+        await this.loadDeviceInfo();
+      } catch (e) {
+        this.showToast(e.message || 'Failed to unregister developer device', 'error');
+      }
+    } else {
+      const defaultLabel = this.deviceInfo?.identity?.device_label || 'Primary Development Workstation';
+      const label = prompt('Enter a label for this development workstation:', defaultLabel);
+      if (label === null) return;
+      try {
+        await this.api('/api/device/register-developer', {
+          method: 'POST',
+          body: { label: label.trim() || defaultLabel, channel: 'dev' }
+        });
+        this.showToast('Device successfully enrolled as Developer Workstation!', 'success');
+        await this.loadDeviceInfo();
+      } catch (e) {
+        this.showToast(e.message || 'Failed to register developer device', 'error');
+      }
+    }
+  }
+
+  async promptResetInstallationId() {
+    const ok = await this.confirmDialog({
+      title: 'Regenerate Installation ID',
+      message: 'This will generate a completely new Installation ID for this computer.',
+      details: 'Any device-targeted developer rollouts or remote configurations tied to the current ID will be reset.',
+      confirmText: 'Regenerate ID',
+      isDestructive: true
+    });
+    if (!ok) return;
+    try {
+      await this.api('/api/device/reset-identity', { method: 'POST', body: { confirm: true } });
+      this.showToast('Relay Installation ID regenerated', 'success');
+      await this.loadDeviceInfo();
+    } catch (e) {
+      this.showToast(e.message || 'Failed to reset identity', 'error');
+    }
+  }
+
+  async refreshDeviceInfo() {
+    await this.loadDeviceInfo();
+    this.showToast('Device information refreshed', 'info');
+  }
+
+  async openDiagnosticsModal() {
+    this.openModal('modal-device-diagnostics');
+    await this.previewDiagnostics();
+  }
+
+  async previewDiagnostics() {
+    const chk = document.getElementById('chk-diagnostics-redact');
+    const redact = chk ? chk.checked : true;
+    const box = document.getElementById('diagnostics-preview-box');
+    if (box) box.textContent = 'Generating diagnostics report...';
+    try {
+      const data = await this.api(`/api/device/diagnostics?redact=${redact}`, { silent: true });
+      if (box) box.textContent = JSON.stringify(data, null, 2);
+    } catch (e) {
+      if (box) box.textContent = `Error loading diagnostics: ${e.message}`;
+    }
+  }
+
+  copyDiagnosticsJSON() {
+    const box = document.getElementById('diagnostics-preview-box');
+    const text = box ? box.textContent : '';
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      this.showToast('Diagnostics JSON copied to clipboard', 'success');
+    }).catch(() => {
+      this.showToast('Could not access clipboard', 'error');
+    });
+  }
+
+  downloadDiagnosticsFile() {
+    const chk = document.getElementById('chk-diagnostics-redact');
+    const redact = chk ? chk.checked : true;
+    window.open(`/api/device/diagnostics?redact=${redact}&download=true`, '_blank');
+    this.showToast('Diagnostics download started', 'info');
   }
 
   async loadBrowserConnection() {

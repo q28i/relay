@@ -5,6 +5,8 @@ whatsapp_browser_session/
 # Local Security, Audit Logs & Machine Authorization
 device_audit.log
 auth_config.json
+device_identity.json
+device_identity.json.tmp
 *.log
 
 # Local Database Files

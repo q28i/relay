@@ -24,7 +24,8 @@ from backend.routers import (
     media,
     collections,
     sets,
-    updater
+    updater,
+    device
 )
 from logger import get_logger
 from backend.paths import get_static_dir
@@ -208,6 +209,7 @@ app.include_router(media.router)
 app.include_router(collections.router)
 app.include_router(sets.router)
 app.include_router(updater.router)
+app.include_router(device.router)
 
 
 @app.get("/api/health", tags=["Health"])

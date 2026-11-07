@@ -1193,7 +1193,105 @@
           </div>
         </div>
 
-        <!-- 4. Application Updates (GitHub Distribution) -->
+        <!-- 4. Device Identity & System Diagnostics -->
+        <div class="card" id="settings-device-card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Device & Installation</div>
+              <div class="card-subtitle">Unique persistent installation identity, developer registration, and local system diagnostics</div>
+            </div>
+            <div style="display: flex; gap: 0.4rem; align-items: center;">
+              <span class="badge" id="device-role-badge" style="font-size: 0.75rem;">Standard</span>
+              <span class="badge badge-secondary" id="device-channel-badge" style="font-size: 0.75rem;">Stable</span>
+            </div>
+          </div>
+          <div class="card-body" style="display: flex; flex-direction: column; gap: 1rem;">
+            <!-- Installation ID -->
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+              <div>
+                <div style="font-size: 0.85rem; font-weight: 500;">Persistent Installation ID</div>
+                <div style="font-size: 0.75rem; color: var(--text-muted);">
+                  Random UUIDv4 generated locally in persistent AppData. Never derived from hardware serials or MAC.
+                </div>
+              </div>
+              <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <code id="device-install-id" style="font-size: 0.78rem; padding: 4px 8px; background: var(--surface-subtle); border: 1px solid var(--border-color); border-radius: var(--radius-xs);">Loading...</code>
+                <button class="btn btn-secondary btn-xs" onclick="app.copyInstallationId()" title="Copy Installation ID to clipboard">Copy</button>
+              </div>
+            </div>
+
+            <!-- Device Label & Machine User -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem;">
+              <div>
+                <div style="font-size: 0.85rem; font-weight: 500;">Friendly Device Label</div>
+                <div style="display: flex; gap: 0.4rem; margin-top: 4px;">
+                  <input type="text" class="form-input" id="input-device-label" placeholder="e.g. Primary Development Workstation" style="font-size: 0.8rem; padding: 4px 8px;">
+                  <button class="btn btn-secondary btn-sm" onclick="app.saveDeviceLabel()">Save</button>
+                </div>
+              </div>
+              <div>
+                <div style="font-size: 0.85rem; font-weight: 500;">Local Machine & Username</div>
+                <div id="device-host-user-text" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 8px;">Loading...</div>
+              </div>
+            </div>
+
+            <!-- Update Channel Selection -->
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+              <div>
+                <div style="font-size: 0.85rem; font-weight: 500;">Update Channel Preference</div>
+                <div style="font-size: 0.75rem; color: var(--text-muted);">
+                  Configure release stream (Stable production, Beta previews, or Dev experimental builds)
+                </div>
+              </div>
+              <div>
+                <select class="form-select" id="select-update-channel" onchange="app.changeUpdateChannel(this.value)" style="font-size: 0.8rem; padding: 4px 8px; width: auto;">
+                  <option value="stable">Stable (Production Releases)</option>
+                  <option value="beta">Beta (Public Prereleases)</option>
+                  <option value="dev">Dev (Experimental / Developer Builds)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- System & Environment Metrics (Compact Grid) -->
+            <div>
+              <div style="font-size: 0.85rem; font-weight: 500; margin-bottom: 0.5rem;">System Specifications & Runtime</div>
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0.5rem; font-size: 0.75rem; background: var(--surface-subtle); padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                <div><span style="color: var(--text-muted);">OS:</span> <strong id="spec-os">-</strong></div>
+                <div><span style="color: var(--text-muted);">CPU:</span> <strong id="spec-cpu">-</strong></div>
+                <div><span style="color: var(--text-muted);">RAM:</span> <strong id="spec-ram">-</strong></div>
+                <div><span style="color: var(--text-muted);">Disk Space:</span> <strong id="spec-disk">-</strong></div>
+                <div><span style="color: var(--text-muted);">Mode:</span> <strong id="spec-mode">-</strong></div>
+                <div><span style="color: var(--text-muted);">Commit:</span> <strong id="spec-commit">-</strong></div>
+                <div><span style="color: var(--text-muted);">Elevation:</span> <strong id="spec-elevation">-</strong></div>
+                <div><span style="color: var(--text-muted);">Browsers:</span> <strong id="spec-browsers">-</strong></div>
+              </div>
+            </div>
+
+            <!-- Diagnostics & Developer Actions Toolbar -->
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; padding-top: 0.25rem;">
+              <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
+                <button class="btn btn-secondary btn-sm" onclick="app.refreshDeviceInfo()">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 3px; vertical-align: middle;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                  Refresh Info
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="app.openDiagnosticsModal()">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 3px; vertical-align: middle;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                  Export Diagnostics
+                </button>
+                <button class="btn btn-secondary btn-sm" id="btn-toggle-developer-reg" onclick="app.toggleDeveloperRegistration()">
+                  Register as Developer
+                </button>
+              </div>
+              <div>
+                <button class="btn btn-danger btn-xs" onclick="app.promptResetInstallationId()" title="Regenerate a new Installation ID">
+                  Reset ID
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. Application Updates (GitHub Distribution) -->
         <div class="card" id="settings-updates-card">
           <div class="card-header">
             <div>
@@ -2717,6 +2815,42 @@
       <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.5rem;">
         <button type="button" class="btn btn-secondary btn-sm" id="btn-confirm-cancel" onclick="app.closeConfirmDialog(false)">Cancel</button>
         <button type="button" class="btn btn-primary btn-sm" id="btn-confirm-proceed" onclick="app.closeConfirmDialog(true)">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Device Diagnostics Export -->
+  <div class="modal-backdrop" id="modal-device-diagnostics" style="z-index: 1040;">
+    <div class="modal-card" style="max-width: 680px;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title">System Diagnostics Report</h3>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">Local environment specifications and configuration. Zero personal message content or tokens.</div>
+        </div>
+        <button class="modal-close" onclick="app.closeModal('modal-device-diagnostics')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; padding: 0.5rem 0.75rem; background: var(--surface-subtle); border-radius: var(--radius-xs); border: 1px solid var(--border-color);">
+          <div>
+            <strong style="font-size: 0.8rem;">Privacy Redaction:</strong>
+            <div style="font-size: 0.72rem; color: var(--text-muted);">Redact username, machine hostname, and personal directory paths</div>
+          </div>
+          <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer; font-size: 0.8rem; font-weight: 500;">
+            <input type="checkbox" id="chk-diagnostics-redact" checked onchange="app.previewDiagnostics()">
+            Redact Sensitive Data
+          </label>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Report Preview (JSON)</label>
+          <pre id="diagnostics-preview-box" style="font-size: 0.72rem; background: #1e1e1e; color: #d4d4d4; padding: 0.75rem; border-radius: var(--radius-xs); max-height: 280px; overflow: auto; white-space: pre-wrap; font-family: Consolas, monospace;"></pre>
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: space-between;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="app.copyDiagnosticsJSON()">Copy JSON</button>
+        <div style="display: flex; gap: 0.4rem;">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-device-diagnostics')">Close</button>
+          <button type="button" class="btn btn-primary btn-sm" onclick="app.downloadDiagnosticsFile()">Download Report</button>
+        </div>
       </div>
     </div>
   </div>
