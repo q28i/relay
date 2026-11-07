@@ -1,10 +1,23 @@
 # Project Documentation Repository (`docs/`)
 
-Welcome to the centralized documentation hub for the **WhatsApp Automation Relay** project. All documentation, system architecture specifications, phase delivery reports, test verification matrices, operational runbooks, and visual screenshot artifacts are kept organized within this directory.
+Welcome to the centralized documentation hub for the **WhatsApp Automation Relay** project. All system architecture specifications, media delivery pipelines, incident post-mortems, testing runbooks, and operator guides are maintained in this directory.
 
 ---
 
-## 🗂️ Documentation Directory Structure
+## 🌟 Master System Documentation Suite (Current Baseline)
+
+- **[System Architecture (`ARCHITECTURE.md`)](ARCHITECTURE.md)**: Complete component specification, FastAPI backend, SQLite schema, and 5 interactive Mermaid lifecycle diagrams.
+- **[WhatsApp Media Pipeline (`WHATSAPP_MEDIA_PIPELINE.md`)](WHATSAPP_MEDIA_PIPELINE.md)**: Forensic history of the Sticker Bug, dynamic file input interception via `HTMLInputElement.prototype.click`, and zero-silent-drop caption enforcement.
+- **[Dispatch Engine & Recovery (`DISPATCH_ENGINE.md`)](DISPATCH_ENGINE.md)**: Campaign creation, anti-ban pacing jitter, session locking, durable queue recovery, and failure isolation.
+- **[Browser Session Management (`BROWSER_SESSIONS.md`)](BROWSER_SESSIONS.md)**: Persistent dedicated session (`whatsapp_browser_session/`), Chromium 136+ compatibility, cached driver resolution, and conflict resolution.
+- **[Incident History & Defect Ledger (`INCIDENT_HISTORY.md`)](INCIDENT_HISTORY.md)**: Chronological record of 17 historical engineering defects, root causes, and verified fixes.
+- **[Operator & User Guide (`USER_GUIDE.md`)](USER_GUIDE.md)**: Step-by-step instructions for importing contacts, building templates, launching campaigns, and monitoring activity.
+- **[Testing & Verification Framework (`TESTING.md`)](TESTING.md)**: Test suite organization, database isolation, 236 passing automated tests, and regression checklists.
+- **[Security & Safety Policy (`SECURITY.md`)](SECURITY.md)**: Local credential boundaries, phone number privacy masking, opt-out suppression, and anti-ban limits.
+
+---
+
+## 🗂️ Legacy & Historical Documentation Structure
 
 ```
 docs/
