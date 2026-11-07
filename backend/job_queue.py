@@ -780,13 +780,13 @@ class BackgroundJobWorker:
                             self._is_paused = True
                             with self._lock:
                                 if self._active_job and self._active_job.get("id") == job_id:
-                                    self._active_job["status"] = "PAUSED"
-                            db.update_job_status(job_id, "PAUSED")
+                                    self._active_job["status"] = "RECONCILIATION_REQUIRED"
+                            db.update_job_status(job_id, "RECONCILIATION_REQUIRED")
                             self._broadcast({
                                 "type": "job_paused",
                                 "job_id": job_id,
-                                "status": "PAUSED",
-                                "reason": f"Uncertain transmission for {recipient_name} (+{masked}). Campaign paused to protect against duplicate messaging."
+                                "status": "RECONCILIATION_REQUIRED",
+                                "reason": f"Uncertain transmission for {recipient_name} (+{masked}). Manual reconciliation required before next recipient."
                             })
                         break
                     else:

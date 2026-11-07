@@ -693,6 +693,8 @@ def test_24_multi_recipient_pauses_only_on_uncertain_transmission():
     assert items[0]["status"] == "UNCERTAIN"
     assert items[1]["status"] == "PENDING"
     assert worker._is_paused is True
+    job_record = db.get_job(job["id"])
+    assert job_record["status"] == "RECONCILIATION_REQUIRED"
 
 
 def test_25_recipient_activity_drawer_contains_reconciliation_and_delivery_fields():

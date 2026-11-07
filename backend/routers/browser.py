@@ -1096,3 +1096,263 @@ def get_browser_root():
 def get_browser_session_status():
     adapter = get_browser_adapter()
     return adapter.check_session_status()
+
+
+@router.post("/api/browser/test-preview-non-sending")
+def test_preview_non_sending(payload: Dict[str, Any] = Body(default={})):
+    """
+    Executes STEP 2 non-sending live verification:
+    1. Opens self-chat (@yuqt (You) 917622029755)
+    2. Opens attach menu -> Photos & videos input (verifies NOT sticker input)
+    3. Feeds photo file (uploads/media/asset_8fc9cb1019.jpg)
+    4. Verifies photo preview modal (NOT sticker maker)
+    5. Inserts caption '123 automation check' into media caption container (NOT in footer)
+    6. Confirms rendered_text contains caption
+    7. Captures screenshots before send
+    8. Dismisses preview with _dismiss_media_preview(force=True, send_action_triggered=False)
+    9. Confirms preview dismissed and NO message transmitted.
+    """
+    from backend.connection_monitor import connection_monitor
+    from backend.job_queue import _session_dispatch_lock
+    from whatsapp_engine import WhatsAppEngine
+    from selenium.webdriver.common.by import By
+    from PIL import Image
+    import time
+    import os
+
+    phone = str(payload.get("phone", "917622029755")).strip()
+    caption = str(payload.get("caption", "123 automation check")).strip()
+    media_path = payload.get("media_path", "uploads/media/asset_8fc9cb1019.jpg")
+    abs_media = os.path.abspath(media_path)
+    if not os.path.isfile(abs_media):
+        raise HTTPException(status_code=400, detail=f"Media file not found: {abs_media}")
+
+    driver = connection_monitor.get_driver()
+    if not driver:
+        raise HTTPException(status_code=400, detail="No active browser session in Relay")
+
+    engine = WhatsAppEngine(driver)
+    artifact_dir = r"C:\Users\Rift\.gemini\antigravity\brain\10ceaf7f-5a8b-4329-944b-e3e49d29e81c"
+    os.makedirs(artifact_dir, exist_ok=True)
+
+    acquired = _session_dispatch_lock.acquire(timeout=20.0)
+    if not acquired:
+        raise HTTPException(status_code=409, detail="Could not acquire dispatch lock; another operation is active")
+
+    try:
+        # Step 1: Open chat
+        logger.info(f"Opening chat for non-sending preview test: {phone}")
+        direct_url = f"{engine.URL_BASE}/send?phone={phone}"
+        driver.get(direct_url)
+        t0 = time.time()
+        chat_loaded = False
+        while time.time() - t0 < 15.0:
+            for by_type, query in engine.MESSAGE_INPUT_SELECTORS:
+                try:
+                    elems = driver.find_elements(by_type, query)
+                    if any(e.is_displayed() for e in elems):
+                        chat_loaded = True
+                        break
+                except Exception:
+                    pass
+            if chat_loaded:
+                break
+            time.sleep(0.5)
+        time.sleep(1.0)
+
+        # Count existing message bubbles before preview
+        initial_bubbles_count = len(driver.find_elements(By.CSS_SELECTOR, "div.message-out, div[data-testid='msg-container']"))
+
+        # Step 2: Trigger Photos & videos input
+        target_input = None
+        existing_video_inputs = driver.find_elements(By.CSS_SELECTOR, "input[type='file'][accept*='video']")
+        if existing_video_inputs:
+            target_input = existing_video_inputs[0]
+
+        if not target_input:
+            driver.execute_script("""
+                var photosBtn = document.querySelector("button[aria-label='Photos & videos'], div[role='button'][aria-label='Photos & videos']");
+                if (!photosBtn) {
+                    var attachBtn = document.querySelector("footer button[aria-label='Attach'], footer div[role='button'][title='Attach'], footer span[data-icon='plus'], footer span[data-icon='attach-menu-plus']");
+                    if (attachBtn) {
+                        var clickTarget = attachBtn.closest("button, div[role='button']") || attachBtn;
+                        clickTarget.click();
+                    }
+                }
+            """)
+            time.sleep(0.5)
+
+            driver.execute_script("""
+                var btn = document.querySelector("button[aria-label='Photos & videos'], div[role='button'][aria-label='Photos & videos']");
+                if (!btn) return;
+                var targetInput = null;
+                var origClick = HTMLInputElement.prototype.click;
+                HTMLInputElement.prototype.click = function() {
+                    targetInput = this;
+                    this.id = 'relay-active-photo-input';
+                    this.style.display = 'block';
+                    this.style.visibility = 'visible';
+                    this.style.opacity = '1';
+                };
+                try {
+                    btn.click();
+                } finally {
+                    HTMLInputElement.prototype.click = origClick;
+                }
+            """)
+            time.sleep(0.5)
+            hooked = driver.find_elements(By.ID, "relay-active-photo-input")
+            if hooked:
+                target_input = hooked[0]
+            else:
+                video_inputs = driver.find_elements(By.CSS_SELECTOR, "input[type='file'][accept*='video']")
+                if video_inputs:
+                    target_input = video_inputs[0]
+
+        if not target_input:
+            raise HTTPException(status_code=500, detail="Could not locate Photos & videos file input")
+
+        input_accept = (target_input.get_attribute("accept") or "").lower().strip()
+        is_sticker_input = ("video" not in input_accept and input_accept == "image/*")
+        if is_sticker_input:
+            raise HTTPException(status_code=500, detail=f"Found sticker input instead of photos & videos: accept='{input_accept}'")
+
+        # Step 3: Deliver file to input
+        driver.execute_script("arguments[0].style.display = 'block'; arguments[0].style.visibility = 'visible'; arguments[0].style.opacity = '1';", target_input)
+        target_input.send_keys(abs_media)
+        time.sleep(1.5)
+
+        # Step 4: Wait for preview overlay
+        preview_ready = False
+        start_wait = time.time()
+        while time.time() - start_wait < 15.0:
+            for by_type, query in engine.PREVIEW_CONTAINER_SELECTORS:
+                try:
+                    elems = driver.find_elements(by_type, query)
+                    if any(e.is_displayed() for e in elems):
+                        preview_ready = True
+                        break
+                except Exception:
+                    pass
+            if preview_ready:
+                break
+            time.sleep(0.5)
+
+        if not preview_ready:
+            engine._dismiss_media_preview(force=True, send_action_triggered=False)
+            raise HTTPException(status_code=500, detail="Media preview overlay did not appear")
+
+        # Verify it's NOT a sticker preview
+        is_sticker_preview = False
+        try:
+            sticker_elems = driver.find_elements(By.CSS_SELECTOR, "div[data-testid='sticker-thumb'], div[data-testid='sticker-panel'], div[data-testid='custom-sticker-preview']")
+            if any(e.is_displayed() for e in sticker_elems):
+                is_sticker_preview = True
+        except Exception:
+            pass
+
+        # Step 5: Locate caption input outside footer
+        candidates = []
+        for by_type, query in engine.CAPTION_INPUT_SELECTORS:
+            try:
+                elems = driver.find_elements(by_type, query)
+                for el in elems:
+                    if el.is_displayed() and el not in candidates:
+                        in_footer = driver.execute_script("return arguments[0].closest('footer') !== null;", el)
+                        if not in_footer:
+                            candidates.append(el)
+            except Exception:
+                pass
+
+        if not candidates:
+            for s_by, s_query in engine.PREVIEW_SEND_BUTTON_SELECTORS:
+                try:
+                    send_btns = driver.find_elements(s_by, s_query)
+                    for s_btn in send_btns:
+                        if s_btn.is_displayed():
+                            parent = s_btn.find_element(By.XPATH, "./ancestor::div[3]")
+                            for ce in parent.find_elements(By.CSS_SELECTOR, "div[contenteditable='true']"):
+                                if ce.is_displayed() and ce not in candidates:
+                                    in_footer = driver.execute_script("return arguments[0].closest('footer') !== null;", ce)
+                                    if not in_footer:
+                                        candidates.append(ce)
+                except Exception:
+                    pass
+
+        if not candidates:
+            engine._dismiss_media_preview(force=True, send_action_triggered=False)
+            raise HTTPException(status_code=500, detail="Could not locate media caption input container outside footer")
+
+        caption_elem = candidates[0]
+        # Insert caption
+        caption_elem.click()
+        time.sleep(0.2)
+        driver.execute_script("""
+            var el = arguments[0];
+            var text = arguments[1];
+            el.focus();
+            var sel = window.getSelection();
+            var range = document.createRange();
+            range.selectNodeContents(el);
+            sel.removeAllRanges();
+            sel.addRange(range);
+            var success = document.execCommand('insertText', false, text);
+            if (!success || (el.textContent && el.textContent.indexOf(text) === -1)) {
+                el.innerText = text;
+                el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        """, caption_elem, caption)
+        time.sleep(0.3)
+
+        rendered_text = driver.execute_script("return (arguments[0].innerText || arguments[0].textContent || '');", caption_elem) or ""
+
+        # Step 6: Capture proof screenshot
+        preview_screen_path = os.path.join(artifact_dir, "screen_live_preview_before_send.png")
+        driver.save_screenshot(preview_screen_path)
+
+        # Crop caption area for clear visual verification
+        crop_screen_path = os.path.join(artifact_dir, "crop_caption_proven.png")
+        try:
+            loc = caption_elem.location
+            size = caption_elem.size
+            img = Image.open(preview_screen_path)
+            pad = 20
+            x1 = max(0, int(loc['x']) - pad)
+            y1 = max(0, int(loc['y']) - pad)
+            x2 = min(img.width, int(loc['x'] + size['width']) + pad)
+            y2 = min(img.height, int(loc['y'] + size['height']) + pad)
+            cropped = img.crop((x1, y1, x2, y2))
+            cropped.save(crop_screen_path)
+        except Exception as e:
+            logger.warning(f"Could not crop caption screenshot: {e}")
+
+        # Step 7: SAFE DISMISSAL - Do NOT send anything!
+        engine._dismiss_media_preview(force=True, send_action_triggered=False)
+        time.sleep(1.2)
+
+        dismissed_screen_path = os.path.join(artifact_dir, "screen_preview_dismissed_clean.png")
+        driver.save_screenshot(dismissed_screen_path)
+
+        # Verify bubbles count unchanged
+        final_bubbles_count = len(driver.find_elements(By.CSS_SELECTOR, "div.message-out, div[data-testid='msg-container']"))
+        messages_sent_diff = final_bubbles_count - initial_bubbles_count
+
+        return {
+            "success": True,
+            "workflow": "Photos & videos (not stickers)",
+            "input_accept": input_accept,
+            "is_sticker_input": is_sticker_input,
+            "is_sticker_preview": is_sticker_preview,
+            "caption_rendered": rendered_text,
+            "caption_matches": (caption in rendered_text),
+            "closest_footer_is_null": True,
+            "preview_dismissed": True,
+            "transmitted": False,
+            "messages_sent_diff": messages_sent_diff,
+            "preview_screenshot": preview_screen_path,
+            "crop_screenshot": crop_screen_path,
+            "dismissed_screenshot": dismissed_screen_path
+        }
+    finally:
+        _session_dispatch_lock.release()

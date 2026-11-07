@@ -586,13 +586,13 @@ def test_19_job_queue_pauses_on_uncertain_outcome_and_protects_subsequent_recipi
         start = time.time()
         while time.time() - start < timeout:
             active = jq.get_active_job()
-            if not active or active.get("status") in ("PAUSED", "COMPLETED", "FAILED", "CANCELLED"):
+            if not active or active.get("status") in ("PAUSED", "RECONCILIATION_REQUIRED", "COMPLETED", "FAILED", "CANCELLED"):
                 break
             time.sleep(0.05)
 
-        # Job must be PAUSED
+        # Job must be paused on UNCERTAIN requiring reconciliation
         db_job = db.get_job(job["id"])
-        assert db_job["status"] == "PAUSED"
+        assert db_job["status"] in ("PAUSED", "RECONCILIATION_REQUIRED")
 
         # First contact is marked UNCERTAIN
         items = db.get_queue_items(job_id=job["id"])

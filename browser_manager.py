@@ -673,6 +673,34 @@ class BrowserManager:
         return profiles
 
     @classmethod
+    def _find_cached_service(cls, driver_type: str):
+        """Locates cached driver binary to avoid selenium-manager network stalls."""
+        try:
+            import glob
+            import shutil
+            if driver_type in ("chrome", "brave"):
+                from selenium.webdriver.chrome.service import Service as ChromeService
+                cache_pattern = os.path.expanduser("~/.cache/selenium/chromedriver/win64/*/chromedriver.exe")
+                matches = glob.glob(cache_pattern)
+                if matches and os.path.isfile(matches[0]):
+                    return ChromeService(executable_path=matches[0])
+                which_path = shutil.which("chromedriver")
+                if which_path and os.path.isfile(which_path):
+                    return ChromeService(executable_path=which_path)
+            elif driver_type == "edge":
+                from selenium.webdriver.edge.service import Service as EdgeService
+                cache_pattern = os.path.expanduser("~/.cache/selenium/msedgedriver/win64/*/msedgedriver.exe")
+                matches = glob.glob(cache_pattern)
+                if matches and os.path.isfile(matches[0]):
+                    return EdgeService(executable_path=matches[0])
+                which_path = shutil.which("msedgedriver")
+                if which_path and os.path.isfile(which_path):
+                    return EdgeService(executable_path=which_path)
+        except Exception:
+            pass
+        return None
+
+    @classmethod
     def launch_driver(cls, browser_key: str, profile: dict, headless: bool = False, ignore_stale_lock: bool = False):
         """
         Initializes and returns a Selenium WebDriver instance with persistent session support.
@@ -754,7 +782,11 @@ class BrowserManager:
                 if headless:
                     options.add_argument("--headless=new")
 
-                driver = webdriver.Chrome(options=options)
+                service = cls._find_cached_service(driver_type)
+                if service:
+                    driver = webdriver.Chrome(service=service, options=options)
+                else:
+                    driver = webdriver.Chrome(options=options)
 
             elif driver_type == "edge":
                 options = EdgeOptions()
@@ -776,7 +808,11 @@ class BrowserManager:
                 if headless:
                     options.add_argument("--headless=new")
 
-                driver = webdriver.Edge(options=options)
+                service = cls._find_cached_service("edge")
+                if service:
+                    driver = webdriver.Edge(service=service, options=options)
+                else:
+                    driver = webdriver.Edge(options=options)
 
             elif driver_type == "firefox":
                 from selenium.webdriver.firefox.options import Options as FirefoxOptions

@@ -767,6 +767,9 @@ class WhatsAppDashboardApp {
         } else if (job.status === 'RUNNING') {
           badge.className = 'badge badge-success';
           badge.textContent = 'Running';
+        } else if (job.status === 'RECONCILIATION_REQUIRED') {
+          badge.className = 'badge badge-danger';
+          badge.textContent = 'Reconciliation Required';
         } else if (job.status === 'PAUSED') {
           badge.className = 'badge badge-neutral';
           badge.textContent = 'Paused';
@@ -783,6 +786,8 @@ class WhatsAppDashboardApp {
       if (recipEl) {
         if (job.status === 'WAITING_FOR_CONNECTION') {
           recipEl.textContent = 'Browser not ready. Campaign will automatically begin once WhatsApp Web is connected.';
+        } else if (job.status === 'RECONCILIATION_REQUIRED') {
+          recipEl.textContent = 'Campaign paused on unconfirmed delivery. Manual chat verification is required before resuming.';
         } else if (job.status === 'PAUSED') {
           recipEl.textContent = 'Campaign paused by operator. Outbound sends are halted.';
         } else if (job.status === 'SCHEDULED') {
