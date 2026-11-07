@@ -5397,7 +5397,157 @@ class WhatsAppDashboardApp {
         document.getElementById('cfg-daily-cap').value = c.daily_cap;
       }
       await this.loadBrowserConnection();
+      await this.loadUpdateStatus();
     } catch (e) {}
+  }
+
+  async loadUpdateStatus() {
+    try {
+      const status = await this.api('/api/updates/status', { silent: true });
+      if (!status) return;
+      const badge = document.getElementById('app-version-badge');
+      if (badge && status.current_version) {
+        badge.textContent = `v${status.current_version}`;
+      }
+      if (status.downloaded_installer) {
+        const box = document.getElementById('update-status-box');
+        const title = document.getElementById('update-status-title');
+        const desc = document.getElementById('update-status-desc');
+        const btnDl = document.getElementById('btn-download-update');
+        const btnApply = document.getElementById('btn-apply-update');
+        if (box) box.style.display = 'block';
+        if (title) title.textContent = 'Update Ready to Install';
+        if (desc) desc.textContent = 'Installer downloaded and verified. Click Install & Restart to proceed.';
+        if (btnDl) btnDl.style.display = 'none';
+        if (btnApply) btnApply.style.display = 'inline-block';
+      }
+    } catch (e) {
+      console.warn('Could not load update status:', e);
+    }
+  }
+
+  async checkForUpdates() {
+    const btn = document.getElementById('btn-check-updates');
+    const originalText = btn ? btn.innerHTML : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = `<span class="spinner" style="display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;margin-right:4px;"></span> Checking...`;
+    }
+
+    try {
+      const res = await this.api('/api/updates/check', { method: 'POST' });
+      const box = document.getElementById('update-status-box');
+      const title = document.getElementById('update-status-title');
+      const desc = document.getElementById('update-status-desc');
+      const btnDl = document.getElementById('btn-download-update');
+      const btnApply = document.getElementById('btn-apply-update');
+      const notesWrap = document.getElementById('update-notes-wrap');
+      const notesBody = document.getElementById('update-notes-body');
+
+      if (!res || !box) return;
+      box.style.display = 'block';
+
+      if (res.has_update) {
+        if (title) title.textContent = `New Version Available: ${res.tag_name}`;
+        if (desc) desc.textContent = `A newer release (${res.tag_name}) is published on GitHub.`;
+        if (btnDl) {
+          btnDl.style.display = 'inline-block';
+          btnDl.disabled = false;
+        }
+        if (btnApply) btnApply.style.display = 'none';
+        if (notesWrap && res.release_notes) {
+          notesWrap.style.display = 'block';
+          if (notesBody) notesBody.textContent = res.release_notes;
+        }
+        this.showToast(`New update available: ${res.tag_name}`, 'info');
+      } else {
+        if (title) title.textContent = 'You are up to date';
+        if (desc) desc.textContent = `Relay v${res.current_version || '2.0.0'} is the latest published release.`;
+        if (btnDl) btnDl.style.display = 'none';
+        if (btnApply) btnApply.style.display = 'none';
+        if (notesWrap) notesWrap.style.display = 'none';
+        this.showToast('You are using the latest version of Relay', 'success');
+      }
+    } catch (e) {
+      this.showToast(e.message || 'Failed to check for updates', 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+      }
+    }
+  }
+
+  async downloadUpdate() {
+    const btnDl = document.getElementById('btn-download-update');
+    if (btnDl) btnDl.disabled = true;
+
+    const progressWrap = document.getElementById('update-progress-wrap');
+    const progressBar = document.getElementById('update-progress-bar');
+    const progressPct = document.getElementById('update-progress-pct');
+    if (progressWrap) progressWrap.style.display = 'block';
+
+    try {
+      await this.api('/api/updates/download', { method: 'POST', body: {} });
+      this.showToast('Download initiated...', 'info');
+
+      // Poll progress
+      const pollTimer = setInterval(async () => {
+        try {
+          const status = await this.api('/api/updates/status', { silent: true });
+          if (!status) return;
+
+          if (progressBar && progressPct) {
+            const p = status.download_progress || 0;
+            progressBar.style.width = `${p}%`;
+            progressPct.textContent = `${p}%`;
+          }
+
+          if (status.download_error) {
+            clearInterval(pollTimer);
+            if (btnDl) btnDl.disabled = false;
+            this.showToast(`Download error: ${status.download_error}`, 'error');
+          } else if (status.downloaded_installer && !status.is_downloading) {
+            clearInterval(pollTimer);
+            if (progressWrap) progressWrap.style.display = 'none';
+            const title = document.getElementById('update-status-title');
+            const desc = document.getElementById('update-status-desc');
+            const btnApply = document.getElementById('btn-apply-update');
+            if (title) title.textContent = 'Update Download Complete';
+            if (desc) desc.textContent = 'Installer downloaded and verified. Click Install & Restart to proceed.';
+            if (btnDl) btnDl.style.display = 'none';
+            if (btnApply) btnApply.style.display = 'inline-block';
+            this.showToast('Update downloaded! Ready to install.', 'success');
+          }
+        } catch (err) {
+          console.warn('Poll error:', err);
+        }
+      }, 1000);
+    } catch (e) {
+      if (btnDl) btnDl.disabled = false;
+      this.showToast(e.message || 'Failed to start download', 'error');
+    }
+  }
+
+  async applyUpdate() {
+    const btn = document.getElementById('btn-apply-update');
+    if (btn) btn.disabled = true;
+
+    try {
+      const res = await this.api('/api/updates/apply', { method: 'POST', body: { silent: false } });
+      this.showToast(res.message || 'Launching installer... Relay will restart shortly.', 'success');
+      setTimeout(() => {
+        document.body.innerHTML = `
+          <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#0f172a;color:#f8fafc;text-align:center;padding:20px;">
+            <h2 style="margin-bottom:8px;">Updating Relay Desktop...</h2>
+            <p style="color:#94a3b8;max-width:400px;">The Windows installer has launched. Please follow the installer prompts. Relay will reopen automatically once complete.</p>
+          </div>
+        `;
+      }, 1500);
+    } catch (e) {
+      if (btn) btn.disabled = false;
+      this.showToast(e.message || 'Failed to launch update installer', 'error');
+    }
   }
 
   async loadBrowserConnection() {

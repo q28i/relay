@@ -15,6 +15,7 @@ from typing import List, Dict, Optional, Tuple, Any
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.edge.options import Options as EdgeOptions
+from backend.paths import get_session_dir
 
 
 class ProfileLockedError(RuntimeError):
@@ -273,9 +274,8 @@ class BrowserManager:
         exe_path = cls._find_executable(browser_info["reg_path"], browser_info["default_paths"])
         exe_exists = bool(exe_path and os.path.isfile(exe_path))
 
-        base_dir = os.path.dirname(os.path.abspath(__file__))
         if is_dedicated or profile_dir == "__dedicated__":
-            user_data_path = os.path.join(base_dir, "whatsapp_browser_session")
+            user_data_path = get_session_dir()
             raw_profile_path = user_data_path
             is_dedicated = True
         else:
@@ -554,8 +554,7 @@ class BrowserManager:
         """
         profiles = []
         # Option 0: Dedicated Profile for WhatsApp Automation
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        dedicated_dir = os.path.join(base_dir, "whatsapp_browser_session")
+        dedicated_dir = get_session_dir()
         os.makedirs(dedicated_dir, exist_ok=True)
         dedicated_avail = cls.check_profile_availability(browser_key, dedicated_dir, is_dedicated=True, profile_dir="__dedicated__")
 

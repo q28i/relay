@@ -18,6 +18,7 @@ from typing import Dict, Any, Optional, List, Set
 import psutil
 
 from logger import get_logger
+from backend.paths import get_session_dir
 
 logger = get_logger("SessionLifecycle")
 
@@ -78,8 +79,7 @@ class SessionLifecycleManager:
         self._launch_mutex = threading.Lock()
         self._launch_in_progress = False
 
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        self.session_dir = session_dir or os.path.join(base_dir, "whatsapp_browser_session")
+        self.session_dir = session_dir or get_session_dir()
         os.makedirs(self.session_dir, exist_ok=True)
         self.session_file = os.path.join(self.session_dir, "relay_session.json")
 

@@ -14,6 +14,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from logger import get_logger
 
 logger = get_logger("ConfigManager")
+from backend.paths import get_config_path
 
 DEFAULT_CONFIG_FILE = "config.json"
 CURRENT_SCHEMA_VERSION = 1
@@ -184,8 +185,7 @@ class ConfigManager:
 
     @staticmethod
     def get_default_path() -> str:
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        return os.path.join(base_dir, DEFAULT_CONFIG_FILE)
+        return get_config_path()
 
     @classmethod
     def load(cls, file_path: Optional[str] = None) -> AppConfig:

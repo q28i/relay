@@ -33,6 +33,7 @@ from browser_manager import (
     UnsupportedProfileAutomationError
 )
 from config_manager import ConfigManager
+from backend.paths import get_session_dir
 from logger import get_logger
 
 logger = get_logger("ConnectionMonitor")
@@ -396,12 +397,11 @@ class ConnectionMonitor:
             self._monitoring_active = True
 
             try:
-                base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
                 target_p = {
                     "dir": self._profile_dir,
                     "name": self._profile_name,
                     "is_dedicated": self._is_dedicated,
-                    "path": os.path.join(base_dir, "whatsapp_browser_session") if self._is_dedicated else b_info.get("user_data_path", "")
+                    "path": get_session_dir() if self._is_dedicated else b_info.get("user_data_path", "")
                 }
                 if self._is_dedicated:
                     os.makedirs(target_p["path"], exist_ok=True)

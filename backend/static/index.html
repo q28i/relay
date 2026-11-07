@@ -1192,6 +1192,69 @@
             </div>
           </div>
         </div>
+
+        <!-- 4. Application Updates (GitHub Distribution) -->
+        <div class="card" id="settings-updates-card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Application Updates</div>
+              <div class="card-subtitle">Desktop releases, automatic update checks, and integrity verification via GitHub</div>
+            </div>
+            <span class="badge badge-primary" id="app-version-badge" style="font-size: 0.75rem;">v2.0.0</span>
+          </div>
+          <div class="card-body" style="display: flex; flex-direction: column; gap: 1rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem;">
+              <div>
+                <div style="font-size: 0.85rem; font-weight: 500;">Release Channel</div>
+                <div style="font-size: 0.75rem; color: var(--text-muted);">
+                  Official distribution from <code style="font-size: 0.75rem;">github.com/q28i/relay</code>
+                </div>
+              </div>
+              <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <button class="btn btn-secondary btn-sm" id="btn-check-updates" onclick="app.checkForUpdates()">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px; vertical-align: middle;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                  Check for Updates
+                </button>
+              </div>
+            </div>
+
+            <!-- Update Status Notice / Action Box -->
+            <div id="update-status-box" style="display: none; padding: 0.85rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); background: var(--surface-subtle);">
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem;">
+                <div>
+                  <span id="update-status-title" style="font-weight: 600; font-size: 0.85rem;">Update Available</span>
+                  <div id="update-status-desc" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">A newer version of Relay is ready to install.</div>
+                </div>
+                <div id="update-actions-wrap" style="display: flex; gap: 0.4rem;">
+                  <button class="btn btn-primary btn-sm" id="btn-download-update" onclick="app.downloadUpdate()">Download Update</button>
+                  <button class="btn btn-success btn-sm" id="btn-apply-update" style="display: none;" onclick="app.applyUpdate()">Install & Restart</button>
+                </div>
+              </div>
+
+              <!-- Progress bar container -->
+              <div id="update-progress-wrap" style="display: none; margin-top: 0.5rem;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.75rem; margin-bottom: 0.25rem;">
+                  <span id="update-progress-label">Downloading update...</span>
+                  <span id="update-progress-pct">0%</span>
+                </div>
+                <div style="width: 100%; height: 6px; background: var(--border-color); border-radius: 3px; overflow: hidden;">
+                  <div id="update-progress-bar" style="width: 0%; height: 100%; background: var(--primary); transition: width 0.3s ease;"></div>
+                </div>
+              </div>
+
+              <!-- Release Notes preview -->
+              <div id="update-notes-wrap" style="display: none; margin-top: 0.75rem; padding-top: 0.5rem; border-top: 1px solid var(--border-color);">
+                <div style="font-size: 0.75rem; font-weight: 600; margin-bottom: 0.25rem;">What's New:</div>
+                <div id="update-notes-body" style="font-size: 0.75rem; color: var(--text-muted); max-height: 120px; overflow-y: auto; white-space: pre-wrap; font-family: inherit;"></div>
+              </div>
+            </div>
+
+            <!-- Update Safety Assurance -->
+            <div style="font-size: 0.72rem; color: var(--text-muted); line-height: 1.4;">
+              <span style="font-weight: 500; color: var(--text);">Data Safety Guarantee:</span> Updating preserves all your WhatsApp credentials, persistent browser sessions, templates, contacts, and media uploads stored safely in <code style="font-size: 0.7rem;">%LOCALAPPDATA%\Relay</code>.
+            </div>
+          </div>
+        </div>
       </div>
     </section>
   </div>

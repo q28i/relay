@@ -12,8 +12,9 @@ import sqlite3
 import threading
 from typing import List, Dict, Any, Optional, Set, Tuple
 from datetime import datetime
+from backend.paths import get_db_path
 
-DB_PATH = os.environ.get("RELAY_DB_PATH") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "whatsapp_web.db")
+DB_PATH = get_db_path()
 _lock = threading.RLock()
 
 

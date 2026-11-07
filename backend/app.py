@@ -23,13 +23,15 @@ from backend.routers import (
     ws,
     media,
     collections,
-    sets
+    sets,
+    updater
 )
 from logger import get_logger
+from backend.paths import get_static_dir
 
 logger = get_logger("FastAPIApp")
 
-STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+STATIC_DIR = get_static_dir()
 os.makedirs(STATIC_DIR, exist_ok=True)
 
 
@@ -205,6 +207,7 @@ app.include_router(ws.router)
 app.include_router(media.router)
 app.include_router(collections.router)
 app.include_router(sets.router)
+app.include_router(updater.router)
 
 
 @app.get("/api/health", tags=["Health"])

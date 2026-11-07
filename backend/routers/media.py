@@ -15,13 +15,12 @@ from pydantic import BaseModel
 
 from backend.database import db
 from logger import get_logger
+from backend.paths import get_media_dir
 
 logger = get_logger("MediaRouter")
 router = APIRouter(prefix="/api/media", tags=["Media Assets"])
 
-MEDIA_DIR = os.environ.get("RELAY_MEDIA_DIR") or os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "uploads", "media"
-)
+MEDIA_DIR = get_media_dir()
 os.makedirs(MEDIA_DIR, exist_ok=True)
 MAX_MEDIA_SIZE = 15 * 1024 * 1024  # 15 MB
 

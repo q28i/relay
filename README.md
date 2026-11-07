@@ -8,13 +8,18 @@ Relay is a local, resilient WhatsApp automation platform designed for personaliz
 
 Comprehensive architectural specifications, incident post-mortems, testing runbooks, and operational guides are maintained in the [`docs/`](docs/) directory:
 
+- **[Desktop Installation Guide (`docs/INSTALLATION.md`)](docs/INSTALLATION.md)**: 1-click installer setup, system requirements, per-user `%LOCALAPPDATA%` architecture.
+- **[Self-Update System (`docs/UPDATING.md`)](docs/UPDATING.md)**: GitHub Releases API integration, active-campaign protection, data preservation guarantee.
+- **[Release & Publishing Runbook (`docs/RELEASING.md`)](docs/RELEASING.md)**: Semantic versioning, GitHub Actions CI/CD release workflow, and checksum verification.
+- **[Packaging Architecture (`docs/PACKAGING.md`)](docs/PACKAGING.md)**: PyInstaller onedir bundle, Inno Setup 6 LZMA2 ultra compression, and runtime storage isolation.
+- **[Troubleshooting Guide (`docs/TROUBLESHOOTING.md`)](docs/TROUBLESHOOTING.md)**: SmartScreen advisories, browser lock handling, and dynamic port failover.
 - **[System Architecture (`docs/ARCHITECTURE.md`)](docs/ARCHITECTURE.md)**: Full component specification, FastAPI backend, SQLite schema, and 5 interactive Mermaid lifecycle diagrams.
 - **[WhatsApp Media Pipeline (`docs/WHATSAPP_MEDIA_PIPELINE.md`)](docs/WHATSAPP_MEDIA_PIPELINE.md)**: Forensic history of the Sticker Bug, dynamic file input interception via `HTMLInputElement.prototype.click`, and zero-silent-drop caption enforcement.
 - **[Dispatch Engine (`docs/DISPATCH_ENGINE.md`)](docs/DISPATCH_ENGINE.md)**: Campaign creation, anti-ban pacing jitter, session locking, durable queue recovery, and failure isolation.
 - **[Browser Session Management (`docs/BROWSER_SESSIONS.md`)](docs/BROWSER_SESSIONS.md)**: Persistent dedicated session (`whatsapp_browser_session/`), Chromium 136+ compatibility, cached driver resolution, and conflict resolution.
 - **[Incident History & Defect Ledger (`docs/INCIDENT_HISTORY.md`)](docs/INCIDENT_HISTORY.md)**: Chronological record of 17 historical engineering defects, root causes, and verified fixes.
 - **[Operator & User Guide (`docs/USER_GUIDE.md`)](docs/USER_GUIDE.md)**: Step-by-step instructions for importing contacts, building templates, launching campaigns, and monitoring activity.
-- **[Testing & Verification Framework (`docs/TESTING.md`)](docs/TESTING.md)**: Test suite organization, database isolation, 236 passing automated tests, and regression checklists.
+- **[Testing & Verification Framework (`docs/TESTING.md`)](docs/TESTING.md)**: Test suite organization, database isolation, 247 passing automated tests, and regression checklists.
 - **[Security & Safety Policy (`docs/SECURITY.md`)](docs/SECURITY.md)**: Local credential boundaries, phone number privacy masking, opt-out suppression, and anti-ban limits.
 
 ---
