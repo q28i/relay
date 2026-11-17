@@ -388,8 +388,14 @@ class SessionLifecycleManager:
         if not psutil.pid_exists(pid):
             return True
 
-        # Send WM_CLOSE to top-level windows
-        send_wm_close_to_pid(pid)
+        # Send WM_CLOSE to top-level windows on Windows, or SIGTERM on POSIX
+        if sys.platform == "win32":
+            send_wm_close_to_pid(pid)
+        else:
+            try:
+                psutil.Process(pid).terminate()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
 
         # Wait for exit
         deadline = time.time() + timeout

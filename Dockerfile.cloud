@@ -1,0 +1,59 @@
+# ==============================================================================
+# Relay WhatsApp Dispatcher — Multi-Arch Cloud Dockerfile (ARM64 & AMD64)
+# Optimized for Oracle Cloud Always Free (Ampere A1) + Coolify + Tailscale
+# ==============================================================================
+
+FROM python:3.11-slim-bookworm
+
+# Prevent interactive prompts during apt install
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    RELAY_HEADLESS=1 \
+    RELAY_USER_DATA_DIR=/data \
+    PORT=8000
+
+# Install Chromium, Chromium-Driver, system fonts, and process coordinator
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    chromium \
+    chromium-driver \
+    fonts-liberation \
+    fonts-noto-color-emoji \
+    ca-certificates \
+    curl \
+    dumb-init \
+    procps \
+    tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create application directory and non-root service user
+RUN groupadd -g 1000 relay && \
+    useradd -u 1000 -g relay -m -s /bin/bash relay && \
+    mkdir -p /app /data && \
+    chown -R relay:relay /app /data
+
+WORKDIR /app
+
+# Install Python requirements
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application source code
+COPY --chown=relay:relay . .
+
+# Set persistent volume for data storage
+VOLUME ["/data"]
+
+# Switch to non-root user
+USER relay
+
+# Expose loopback service port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD curl -f http://127.0.0.1:8000/api/health || exit 1
+
+# Process init and startup
+ENTRYPOINT ["/usr/bin/dumb-init", "--"]
+CMD ["uvicorn", "backend.app:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -7,11 +7,15 @@ Identifies developer vs client devices, logs audits, and handles licensing.
 import os
 import json
 import uuid
-import winreg
 import platform
 import hashlib
 import datetime
 from typing import Dict, Tuple
+
+try:
+    import winreg
+except ImportError:
+    winreg = None
 
 # Whitelisted Developer Hardware IDs (Logs user's machine as DEVELOPER)
 DEVELOPER_WHITELIST = {
@@ -34,12 +38,25 @@ class DeviceManager:
         if cls._cached_info:
             return cls._cached_info
 
-        # 1. Windows MachineGuid
+        # 1. Hardware GUID (Windows MachineGuid or Linux machine-id)
         guid = ""
-        try:
-            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography") as k:
-                guid, _ = winreg.QueryValueEx(k, "MachineGuid")
-        except Exception:
+        if winreg is not None:
+            try:
+                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography") as k:
+                    guid, _ = winreg.QueryValueEx(k, "MachineGuid")
+            except Exception:
+                pass
+        if not guid:
+            for mid_path in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
+                if os.path.isfile(mid_path):
+                    try:
+                        with open(mid_path, "r", encoding="utf-8") as mf:
+                            guid = mf.read().strip()
+                            if guid:
+                                break
+                    except Exception:
+                        pass
+        if not guid:
             guid = str(uuid.uuid4())
 
         # 2. Hardware MAC node fallback

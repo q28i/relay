@@ -1,0 +1,39 @@
+services:
+  relay:
+    build:
+      context: .
+      dockerfile: Dockerfile.cloud
+    container_name: relay-dispatcher
+    restart: unless-stopped
+    # Strictly bind to host loopback to prevent public internet access.
+    # Tailscale Serve on the host proxies traffic privately to 127.0.0.1:8000.
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      - RELAY_HEADLESS=1
+      - RELAY_USER_DATA_DIR=/data
+      - RELAY_ENABLE_AUTH=${RELAY_ENABLE_AUTH:-1}
+      - RELAY_AUTH_KEY=${RELAY_AUTH_KEY:-}
+      - ALLOWED_TAILSCALE_USERS=${ALLOWED_TAILSCALE_USERS:-}
+      - TZ=${TZ:-UTC}
+    volumes:
+      # Persistent storage preserving SQLite database, uploads, and browser session
+      - relay_data:/data
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4096M
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  relay_data:
+    name: relay_data

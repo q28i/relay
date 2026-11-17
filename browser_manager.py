@@ -5,13 +5,26 @@ Allows persistent WhatsApp Web sessions without re-scanning QR codes.
 """
 
 import os
+import sys
 import json
-import winreg
 import time
 import psutil
 import ctypes
-from ctypes import wintypes
+import shutil
+import subprocess
+import re
 from typing import List, Dict, Optional, Tuple, Any
+
+try:
+    import winreg
+except ImportError:
+    winreg = None
+
+try:
+    from ctypes import wintypes
+except Exception:
+    wintypes = None
+
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.edge.options import Options as EdgeOptions
@@ -57,25 +70,32 @@ class UnsupportedProfileAutomationError(RuntimeError):
 
 
 def get_file_version_string(filename: str) -> Optional[str]:
-    """Retrieves file product version string on Windows using Win32 API without spawning processes."""
+    """Retrieves file product version string cross-platform without failing on Linux."""
     if not filename or not os.path.isfile(filename):
         return None
+    if sys.platform == "win32":
+        try:
+            size = ctypes.windll.version.GetFileVersionInfoSizeW(filename, None)
+            if size:
+                res = ctypes.create_string_buffer(size)
+                if ctypes.windll.version.GetFileVersionInfoW(filename, 0, size, res):
+                    handle = ctypes.c_void_p()
+                    length = ctypes.c_uint()
+                    if ctypes.windll.version.VerQueryValueW(res, r'\\VarFileInfo\\Translation', ctypes.byref(handle), ctypes.byref(length)):
+                        trans = ctypes.cast(handle, ctypes.POINTER(ctypes.c_uint16))
+                        lang, codepage = trans[0], trans[1]
+                        sub_block = f'\\\\StringFileInfo\\\\{lang:04x}{codepage:04x}\\\\ProductVersion'
+                        if ctypes.windll.version.VerQueryValueW(res, sub_block, ctypes.byref(handle), ctypes.byref(length)):
+                            return ctypes.wstring_at(handle)
+        except Exception:
+            pass
+    # POSIX / Linux fallback or if Win32 version query fails
     try:
-        size = ctypes.windll.version.GetFileVersionInfoSizeW(filename, None)
-        if not size:
-            return None
-        res = ctypes.create_string_buffer(size)
-        if not ctypes.windll.version.GetFileVersionInfoW(filename, 0, size, res):
-            return None
-        handle = ctypes.c_void_p()
-        length = ctypes.c_uint()
-        if not ctypes.windll.version.VerQueryValueW(res, r'\\VarFileInfo\\Translation', ctypes.byref(handle), ctypes.byref(length)):
-            return None
-        trans = ctypes.cast(handle, ctypes.POINTER(ctypes.c_uint16))
-        lang, codepage = trans[0], trans[1]
-        sub_block = f'\\\\StringFileInfo\\\\{lang:04x}{codepage:04x}\\\\ProductVersion'
-        if ctypes.windll.version.VerQueryValueW(res, sub_block, ctypes.byref(handle), ctypes.byref(length)):
-            return ctypes.wstring_at(handle)
+        res = subprocess.run([filename, "--version"], capture_output=True, text=True, timeout=5)
+        out = (res.stdout or "") + (res.stderr or "")
+        match = re.search(r"(\d+\.\d+\.\d+\.\d+|\d+\.\d+\.\d+)", out)
+        if match:
+            return match.group(1)
     except Exception:
         pass
     return None
@@ -118,6 +138,8 @@ def is_profile_automation_supported(browser_key: str, profile_dir: str, is_dedic
 
 def has_visible_window(pid: int) -> bool:
     """Checks whether a process currently owns at least one visible top-level window."""
+    if sys.platform != "win32" or wintypes is None:
+        return False
     try:
         user32 = ctypes.windll.user32
         found = []
@@ -142,58 +164,84 @@ class BrowserManager:
     BROWSERS = {
         "chrome": {
             "name": "Google Chrome",
-            "exe_names": ["chrome.exe"],
+            "exe_names": ["chrome.exe", "google-chrome", "google-chrome-stable", "chromium", "chromium-browser"],
             "reg_path": r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe",
             "default_paths": [
                 os.path.join(os.environ.get("PROGRAMFILES", r"C:\Program Files"), "Google", "Chrome", "Application", "chrome.exe"),
                 os.path.join(os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)"), "Google", "Chrome", "Application", "chrome.exe"),
                 os.path.join(os.environ.get("LOCALAPPDATA", ""), "Google", "Chrome", "Application", "chrome.exe"),
+                "/usr/bin/google-chrome-stable",
+                "/usr/bin/google-chrome",
+                "/usr/bin/chromium",
+                "/usr/bin/chromium-browser",
+                "/snap/bin/chromium",
             ],
-            "user_data_path": os.path.join(os.environ.get("LOCALAPPDATA", ""), "Google", "Chrome", "User Data"),
+            "user_data_path": (
+                os.path.join(os.environ.get("LOCALAPPDATA", ""), "Google", "Chrome", "User Data")
+                if sys.platform == "win32"
+                else os.path.expanduser("~/.config/google-chrome")
+            ),
             "driver_type": "chrome"
         },
         "edge": {
             "name": "Microsoft Edge",
-            "exe_names": ["msedge.exe"],
+            "exe_names": ["msedge.exe", "microsoft-edge", "microsoft-edge-stable"],
             "reg_path": r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe",
             "default_paths": [
                 os.path.join(os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)"), "Microsoft", "Edge", "Application", "msedge.exe"),
                 os.path.join(os.environ.get("PROGRAMFILES", r"C:\Program Files"), "Microsoft", "Edge", "Application", "msedge.exe"),
                 os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Edge", "Application", "msedge.exe"),
+                "/usr/bin/microsoft-edge-stable",
+                "/usr/bin/microsoft-edge",
             ],
-            "user_data_path": os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Edge", "User Data"),
+            "user_data_path": (
+                os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Edge", "User Data")
+                if sys.platform == "win32"
+                else os.path.expanduser("~/.config/microsoft-edge")
+            ),
             "driver_type": "edge"
         },
         "brave": {
             "name": "Brave Browser",
-            "exe_names": ["brave.exe"],
+            "exe_names": ["brave.exe", "brave-browser", "brave"],
             "reg_path": r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\brave.exe",
             "default_paths": [
                 os.path.join(os.environ.get("PROGRAMFILES", r"C:\Program Files"), "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
                 os.path.join(os.environ.get("LOCALAPPDATA", ""), "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+                "/usr/bin/brave-browser",
+                "/usr/bin/brave",
             ],
-            "user_data_path": os.path.join(os.environ.get("LOCALAPPDATA", ""), "BraveSoftware", "Brave-Browser", "User Data"),
+            "user_data_path": (
+                os.path.join(os.environ.get("LOCALAPPDATA", ""), "BraveSoftware", "Brave-Browser", "User Data")
+                if sys.platform == "win32"
+                else os.path.expanduser("~/.config/BraveSoftware/Brave-Browser")
+            ),
             "driver_type": "brave"
         },
         "firefox": {
             "name": "Mozilla Firefox",
-            "exe_names": ["firefox.exe"],
+            "exe_names": ["firefox.exe", "firefox"],
             "reg_path": r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\firefox.exe",
             "default_paths": [
                 os.path.join(os.environ.get("PROGRAMFILES", r"C:\Program Files"), "Mozilla Firefox", "firefox.exe"),
                 os.path.join(os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)"), "Mozilla Firefox", "firefox.exe"),
+                "/usr/bin/firefox",
             ],
-            "user_data_path": os.path.join(os.environ.get("APPDATA", ""), "Mozilla", "Firefox"),
+            "user_data_path": (
+                os.path.join(os.environ.get("APPDATA", ""), "Mozilla", "Firefox")
+                if sys.platform == "win32"
+                else os.path.expanduser("~/.mozilla/firefox")
+            ),
             "driver_type": "firefox"
         }
     }
 
     @classmethod
     def get_installed_browsers(cls) -> Dict[str, dict]:
-        """Detects which supported browsers are installed on the local Windows system."""
+        """Detects which supported browsers are installed on the local system."""
         installed = {}
         for key, info in cls.BROWSERS.items():
-            exe_path = cls._find_executable(info["reg_path"], info["default_paths"])
+            exe_path = cls._find_executable(info.get("reg_path", ""), info.get("default_paths", []))
             if exe_path:
                 info_copy = info.copy()
                 info_copy["exe_path"] = exe_path
@@ -202,16 +250,34 @@ class BrowserManager:
 
     @staticmethod
     def _find_executable(reg_path: str, default_paths: List[str]) -> Optional[str]:
-        # 1. Registry
-        for hkey in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
-            try:
-                with winreg.OpenKey(hkey, reg_path) as k:
-                    val, _ = winreg.QueryValueEx(k, "")
-                    if val and os.path.isfile(val):
-                        return val
-            except OSError:
-                pass
-        # 2. Default installation paths
+        # 1. Windows Registry (if available)
+        if winreg is not None and reg_path:
+            for hkey in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+                try:
+                    with winreg.OpenKey(hkey, reg_path) as k:
+                        val, _ = winreg.QueryValueEx(k, "")
+                        if val and os.path.isfile(val):
+                            return val
+                except OSError:
+                    pass
+        # 2. PATH command lookup via shutil.which
+        for p in default_paths:
+            base = os.path.basename(p)
+            if base:
+                found = shutil.which(base)
+                if found and os.path.isfile(found):
+                    return found
+                if base.endswith(".exe"):
+                    linux_name = base[:-4]
+                    found = shutil.which(linux_name)
+                    if found and os.path.isfile(found):
+                        return found
+        # Common Linux browser commands
+        for cmd in ("chromium", "chromium-browser", "google-chrome", "google-chrome-stable"):
+            found = shutil.which(cmd)
+            if found and os.path.isfile(found):
+                return found
+        # 3. Default installation paths on disk
         for p in default_paths:
             if p and os.path.isfile(p):
                 return p
@@ -679,13 +745,24 @@ class BrowserManager:
             import shutil
             if driver_type in ("chrome", "brave"):
                 from selenium.webdriver.chrome.service import Service as ChromeService
-                cache_pattern = os.path.expanduser("~/.cache/selenium/chromedriver/win64/*/chromedriver.exe")
-                matches = glob.glob(cache_pattern)
-                if matches and os.path.isfile(matches[0]):
-                    return ChromeService(executable_path=matches[0])
+                # 1. Linux standard system paths
+                for cand in ("/usr/bin/chromedriver", "/usr/lib/chromium-browser/chromedriver", "/usr/lib/chromium/chromedriver"):
+                    if os.path.isfile(cand):
+                        return ChromeService(executable_path=cand)
+                # 2. PATH resolution
                 which_path = shutil.which("chromedriver")
                 if which_path and os.path.isfile(which_path):
                     return ChromeService(executable_path=which_path)
+                # 3. Selenium cache pattern (cross-platform)
+                cache_patterns = [
+                    os.path.expanduser("~/.cache/selenium/chromedriver/win64/*/chromedriver.exe"),
+                    os.path.expanduser("~/.cache/selenium/chromedriver/linux64/*/chromedriver"),
+                    os.path.expanduser("~/.cache/selenium/chromedriver/*/*/chromedriver*")
+                ]
+                for cp in cache_patterns:
+                    matches = glob.glob(cp)
+                    if matches and os.path.isfile(matches[0]):
+                        return ChromeService(executable_path=matches[0])
             elif driver_type == "edge":
                 from selenium.webdriver.edge.service import Service as EdgeService
                 cache_pattern = os.path.expanduser("~/.cache/selenium/msedgedriver/win64/*/msedgedriver.exe")
@@ -759,7 +836,7 @@ class BrowserManager:
                 options = ChromeOptions()
                 if session_id:
                     options.add_argument(f"--relay-session-id={session_id}")
-                if driver_type == "brave":
+                if driver_type == "brave" or (browser_info.get("exe_path") and sys.platform != "win32"):
                     options.binary_location = browser_info["exe_path"]
 
                 if profile.get("is_dedicated"):

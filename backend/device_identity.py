@@ -286,6 +286,14 @@ class DeviceIdentityManager:
                     avail_ram_gb = round(stat.ullAvailPhys / (1024**3), 2)
             except Exception as e:
                 logger.debug(f"Failed to query RAM via ctypes: {e}")
+        else:
+            try:
+                import psutil
+                vm = psutil.virtual_memory()
+                total_ram_gb = round(vm.total / (1024**3), 2)
+                avail_ram_gb = round(vm.available / (1024**3), 2)
+            except Exception:
+                pass
 
         # Disk space on persistent data drive
         free_disk_gb = 0.0

@@ -1007,7 +1007,8 @@ class ConnectionMonitor:
                 ]
             elif state == ConnectionState.WAITING_FOR_QR:
                 actions = [
-                    {"id": "open_whatsapp", "label": "Open WhatsApp Web", "primary": True},
+                    {"id": "pair_phone", "label": "Link with Phone Number", "primary": True},
+                    {"id": "open_whatsapp", "label": "Open WhatsApp Web", "variant": "secondary"},
                     {"id": "cancel", "label": "Cancel", "variant": "secondary"},
                     {"id": "change_profile", "label": "Change profile", "variant": "secondary"}
                 ]
@@ -1048,6 +1049,7 @@ class ConnectionMonitor:
                 else:
                     actions = [
                         {"id": "start_session", "label": "Start Session", "primary": True},
+                        {"id": "pair_phone", "label": "Link with Phone Number", "variant": "secondary"},
                         {"id": "test_connection", "label": "Test Connection", "variant": "secondary"},
                         {"id": "change_profile", "label": "Change profile", "variant": "secondary"}
                     ]

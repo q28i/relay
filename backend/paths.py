@@ -51,6 +51,10 @@ def get_user_data_dir() -> str:
     if env_dir:
         return os.path.abspath(env_dir)
 
+    # In cloud / Docker environments with a mounted /data persistent volume
+    if sys.platform != "win32" and os.path.isdir("/data") and os.access("/data", os.W_OK):
+        return "/data"
+
     if is_frozen():
         local_app_data = os.environ.get("LOCALAPPDATA")
         if not local_app_data:

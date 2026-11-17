@@ -561,6 +561,9 @@ class WhatsAppDashboardApp {
     try {
       const res = await fetch(endpoint, options);
       if (!res.ok) {
+        if (res.status === 401 && !endpoint.includes('/api/auth/')) {
+          window.location.href = '/login';
+        }
         const errData = await res.json().catch(() => ({ detail: res.statusText }));
         const message = errData.message || errData.detail || 'Request failed';
         const error = new Error(message);
@@ -6085,6 +6088,11 @@ class WhatsAppDashboardApp {
   async executeConnectionAction(actionId, label) {
     if (this.isExecutingConnAction) return;
 
+    if (actionId === 'pair_phone') {
+      this.openPhonePairingModal();
+      return;
+    }
+
     if (actionId === 'change_profile') {
       this.openProfilePickerModal();
       return;
@@ -6229,6 +6237,192 @@ class WhatsAppDashboardApp {
     } catch (e) {
       this.showToast('Could not load diagnostic details.', 'error');
     }
+  }
+
+  // --- WhatsApp Phone Number Pairing Methods ---
+  openPhonePairingModal() {
+    this.resetPhonePairingView();
+    this.openModal('modal-phone-pairing');
+    setTimeout(() => {
+      const inp = document.getElementById('pairing-phone-input');
+      if (inp) inp.focus();
+    }, 200);
+  }
+
+  closePhonePairingModal() {
+    if (this._pairingPollTimer) {
+      clearInterval(this._pairingPollTimer);
+      this._pairingPollTimer = null;
+    }
+    this.closeModal('modal-phone-pairing');
+  }
+
+  resetPhonePairingView() {
+    if (this._pairingPollTimer) {
+      clearInterval(this._pairingPollTimer);
+      this._pairingPollTimer = null;
+    }
+    const stepInput = document.getElementById('pairing-step-input');
+    const stepCode = document.getElementById('pairing-step-code');
+    const btnRetry = document.getElementById('btn-pairing-retry');
+    const errDiv = document.getElementById('pairing-input-error');
+    const btnReq = document.getElementById('btn-request-pairing-code');
+
+    if (stepInput) stepInput.style.display = 'block';
+    if (stepCode) stepCode.style.display = 'none';
+    if (btnRetry) btnRetry.style.display = 'none';
+    if (errDiv) { errDiv.style.display = 'none'; errDiv.innerText = ''; }
+    if (btnReq) { btnReq.disabled = false; btnReq.innerText = 'Generate Pairing Code'; }
+  }
+
+  async submitPhonePairing() {
+    const inp = document.getElementById('pairing-phone-input');
+    const errDiv = document.getElementById('pairing-input-error');
+    const btnReq = document.getElementById('btn-request-pairing-code');
+    if (!inp || !btnReq) return;
+
+    const phone = inp.value.trim();
+    if (!phone || phone.length < 7) {
+      if (errDiv) {
+        errDiv.innerText = 'Please enter a valid phone number with country code.';
+        errDiv.style.display = 'block';
+      }
+      return;
+    }
+
+    if (errDiv) errDiv.style.display = 'none';
+    btnReq.disabled = true;
+    btnReq.innerText = 'Launching browser & generating code (takes ~5-10s)...';
+
+    try {
+      const res = await this.api('/api/whatsapp/pair-phone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone_number: phone })
+      });
+
+      if (res && res.success) {
+        if (res.status === 'already_connected') {
+          this.showToast('WhatsApp is already connected!', 'success');
+          this.closePhonePairingModal();
+          await this.loadBrowserConnection();
+          return;
+        }
+
+        const stepInput = document.getElementById('pairing-step-input');
+        const stepCode = document.getElementById('pairing-step-code');
+        const btnRetry = document.getElementById('btn-pairing-retry');
+        const codeVal = document.getElementById('pairing-code-val');
+        const timerVal = document.getElementById('pairing-code-timer');
+
+        if (stepInput) stepInput.style.display = 'none';
+        if (stepCode) stepCode.style.display = 'block';
+        if (btnRetry) btnRetry.style.display = 'inline-block';
+        if (codeVal) codeVal.innerText = res.code || '---- ----';
+
+        let secondsLeft = res.seconds_remaining || 120;
+        if (timerVal) timerVal.innerText = `${secondsLeft}s remaining`;
+
+        this._startPairingStatusPolling(secondsLeft);
+      } else {
+        const msg = (res && res.error) || 'Failed to generate pairing code. Please try again.';
+        if (errDiv) {
+          errDiv.innerText = msg;
+          errDiv.style.display = 'block';
+        }
+        btnReq.disabled = false;
+        btnReq.innerText = 'Generate Pairing Code';
+      }
+    } catch (e) {
+      if (errDiv) {
+        errDiv.innerText = e.message || 'Error communicating with server.';
+        errDiv.style.display = 'block';
+      }
+      btnReq.disabled = false;
+      btnReq.innerText = 'Generate Pairing Code';
+    }
+  }
+
+  _startPairingStatusPolling(initialSeconds) {
+    if (this._pairingPollTimer) {
+      clearInterval(this._pairingPollTimer);
+    }
+    let secondsLeft = initialSeconds;
+    const timerVal = document.getElementById('pairing-code-timer');
+    const feedbackText = document.getElementById('pairing-status-feedback-text');
+
+    this._pairingPollTimer = setInterval(async () => {
+      secondsLeft = Math.max(0, secondsLeft - 1);
+      if (timerVal) timerVal.innerText = `${secondsLeft}s remaining`;
+
+      if (secondsLeft <= 0) {
+        clearInterval(this._pairingPollTimer);
+        this._pairingPollTimer = null;
+        if (feedbackText) feedbackText.innerText = 'Code expired. Please request a new code.';
+        if (timerVal) {
+          timerVal.className = 'badge badge-danger';
+          timerVal.innerText = 'Expired';
+        }
+        return;
+      }
+
+      if (secondsLeft % 2 === 0) {
+        try {
+          const statusRes = await this.api('/api/whatsapp/pair-status', { silent: true });
+          if (statusRes) {
+            if (statusRes.status === 'authenticated' || statusRes.is_logged_in) {
+              clearInterval(this._pairingPollTimer);
+              this._pairingPollTimer = null;
+              this.showToast('WhatsApp successfully connected!', 'success');
+              this.closePhonePairingModal();
+              await this.loadBrowserConnection();
+              await this.loadDashboardData();
+            } else if (statusRes.status === 'expired') {
+              clearInterval(this._pairingPollTimer);
+              this._pairingPollTimer = null;
+              if (feedbackText) feedbackText.innerText = 'Code expired on WhatsApp Web.';
+              if (timerVal) {
+                timerVal.className = 'badge badge-danger';
+                timerVal.innerText = 'Expired';
+              }
+            }
+          }
+        } catch (e) {}
+      }
+    }, 1000);
+  }
+
+  copyPairingCode() {
+    const codeVal = document.getElementById('pairing-code-val');
+    if (!codeVal) return;
+    const raw = codeVal.innerText.trim();
+    if (!raw || raw.startsWith('----')) return;
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(raw).then(() => {
+        this.showToast('Pairing code copied to clipboard!', 'success');
+      }).catch(() => {
+        this._copyFallback(raw);
+      });
+    } else {
+      this._copyFallback(raw);
+    }
+  }
+
+  _copyFallback(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+      this.showToast('Pairing code copied!', 'success');
+    } catch (e) {
+      this.showToast(`Code: ${text}`, 'info');
+    }
+    document.body.removeChild(ta);
   }
 
   // --- Connection Model Selection ---

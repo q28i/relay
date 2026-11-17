@@ -25,8 +25,11 @@ from backend.routers import (
     collections,
     sets,
     updater,
-    device
+    device,
+    auth,
+    pairing
 )
+from backend.auth_middleware import AuthMiddleware
 from logger import get_logger
 from backend.paths import get_static_dir
 
@@ -165,6 +168,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.add_middleware(AuthMiddleware)
+
 @app.middleware("http")
 async def add_no_cache_headers(request: Request, call_next):
     """Ensure browsers do not serve stale cached static frontend files or HTML."""
@@ -197,6 +202,8 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 # Register REST & WebSocket API Routers
+app.include_router(auth.router)
+app.include_router(pairing.router)
 app.include_router(contacts.router)
 app.include_router(templates.router)
 app.include_router(campaigns.router)
@@ -234,6 +241,15 @@ def favicon():
     """Serves a clean SVG favicon preventing 404 logs."""
     svg_icon = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#0f766e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>"""
     return Response(content=svg_icon, media_type="image/svg+xml")
+
+
+@app.get("/manifest.json", include_in_schema=False)
+def web_manifest():
+    """Serves PWA web app manifest for mobile home screen installation."""
+    manifest_file = os.path.join(STATIC_DIR, "manifest.json")
+    if os.path.isfile(manifest_file):
+        return FileResponse(manifest_file, media_type="application/manifest+json")
+    return JSONResponse(status_code=404, content={"detail": "Manifest not found"})
 
 
 @app.get("/", include_in_schema=False)

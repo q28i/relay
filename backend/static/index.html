@@ -2,9 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Relay — Local Messaging Dispatcher</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0d9488">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Relay — Messaging Dispatcher</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.ico">
+  <link rel="manifest" href="/manifest.json">
   <!-- Immediate theme bootstrap to avoid flash of incorrect theme -->
   <script>
     (function() {
@@ -2851,6 +2855,86 @@
           <button type="button" class="btn btn-secondary btn-sm" onclick="app.closeModal('modal-device-diagnostics')">Close</button>
           <button type="button" class="btn btn-primary btn-sm" onclick="app.downloadDiagnosticsFile()">Download Report</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: WhatsApp Phone Number Pairing -->
+  <div class="modal-backdrop" id="modal-phone-pairing" style="z-index: 1045;">
+    <div class="modal-card" style="max-width: 480px;">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title">Link with Phone Number</h3>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">Single-phone friendly &mdash; link WhatsApp without scanning a QR code</div>
+        </div>
+        <button class="modal-close" onclick="app.closePhonePairingModal()">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 1.25rem;">
+        <!-- Step 1: Input Phone Number -->
+        <div id="pairing-step-input">
+          <p style="font-size: 0.8125rem; color: var(--text-secondary); margin-bottom: 1rem; line-height: 1.45;">
+            Enter your WhatsApp mobile number including country code. Relay will open WhatsApp Web in the cloud and generate an 8-character code for your phone.
+          </p>
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label class="form-label">Phone Number (with Country Code)</label>
+            <input type="tel" class="form-input" id="pairing-phone-input" placeholder="e.g. +14155552671 or 919876543210" style="font-size: 1.1rem; padding: 0.65rem 0.85rem;" autofocus>
+            <div class="form-hint">Must include country code digits (e.g. +1 for US/CA, +91 for India, +44 for UK).</div>
+          </div>
+          <div id="pairing-input-error" style="color: var(--color-danger, #ef4444); font-size: 0.8rem; margin-bottom: 0.75rem; display: none;"></div>
+          <button type="button" class="btn btn-primary" id="btn-request-pairing-code" onclick="app.submitPhonePairing()" style="width: 100%; justify-content: center; font-weight: 600;">
+            Generate Pairing Code
+          </button>
+        </div>
+
+        <!-- Step 2: Code Display & Countdown -->
+        <div id="pairing-step-code" style="display: none;">
+          <div style="text-align: center;">
+            <div style="font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em;">Your 8-Character Pairing Code</div>
+            <div class="pairing-code-box" id="pairing-code-val">---- ----</div>
+            <div style="display: flex; justify-content: center; gap: 0.5rem; margin-bottom: 1rem;">
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-copy-pairing-code" onclick="app.copyPairingCode()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                Copy Code
+              </button>
+              <span id="pairing-code-timer" class="badge badge-warning" style="align-self: center; font-size: 0.75rem;">120s remaining</span>
+            </div>
+          </div>
+
+          <div style="background: var(--surface-subtle); border: 1px solid var(--border-color); border-radius: var(--radius-xs); padding: 0.85rem; margin-bottom: 1rem;">
+            <strong style="font-size: 0.8125rem; display: block; margin-bottom: 0.5rem;">Instructions on your Phone:</strong>
+            <div class="pairing-instruction-list">
+              <div class="pairing-instruction-item">
+                <div class="pairing-step-num">1</div>
+                <div>Open WhatsApp on your mobile phone</div>
+              </div>
+              <div class="pairing-instruction-item">
+                <div class="pairing-step-num">2</div>
+                <div>Tap <strong>Settings</strong> (iOS) or <strong>⋮ Menu</strong> (Android) &rarr; <strong>Linked Devices</strong></div>
+              </div>
+              <div class="pairing-instruction-item">
+                <div class="pairing-step-num">3</div>
+                <div>Tap <strong>Link a Device</strong></div>
+              </div>
+              <div class="pairing-instruction-item">
+                <div class="pairing-step-num">4</div>
+                <div>Tap <strong>Link with phone number instead</strong> at the bottom</div>
+              </div>
+              <div class="pairing-instruction-item">
+                <div class="pairing-step-num">5</div>
+                <div>Type the 8-character code shown above</div>
+              </div>
+            </div>
+          </div>
+
+          <div id="pairing-status-feedback" style="display: flex; align-items: center; justify-content: center; gap: 0.5rem; font-size: 0.8125rem; color: var(--text-muted);">
+            <span class="conn-pulse-dot pulse"></span>
+            <span id="pairing-status-feedback-text">Waiting for code confirmation on your phone...</span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: space-between;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="app.closePhonePairingModal()">Cancel</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-pairing-retry" style="display: none;" onclick="app.resetPhonePairingView()">Enter Different Number</button>
       </div>
     </div>
   </div>
